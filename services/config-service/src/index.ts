@@ -9,6 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const CONFIG_PATH = path.resolve(__dirname, '../config.json');
 const CACHE_TTL_MS = 60_000;
+const isDev = process.env.NODE_ENV !== 'production';
 
 app.use(bodyParser.json());
 
@@ -128,7 +129,11 @@ const swaggerSpec = swaggerJsdoc({
     },
     servers: [{ url: `http://localhost:${PORT}` }],
   },
-  apis: [__filename],
+  apis: [
+    isDev
+      ? path.join(__dirname, '../src/index.ts')  // ts-node during dev
+      : path.join(__dirname, '*.js'),            // compiled JS during prod
+  ],
 });
 
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
