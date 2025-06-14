@@ -9,7 +9,7 @@ RUN npm install
 COPY . .
 
 RUN npx tsc
-RUN npm run test -- --run
+RUN npm run test
 
 # Stage 2: Production image
 FROM node:24-slim
