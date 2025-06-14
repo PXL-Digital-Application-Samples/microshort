@@ -8,6 +8,12 @@ on:
   pull_request:
     paths:
       - 'services/config-service/**'
+  workflow_dispatch:
+    inputs:
+      run:
+        description: 'Run tests'
+        required: false
+        default: 'true'
 
 jobs:
   config-service:
