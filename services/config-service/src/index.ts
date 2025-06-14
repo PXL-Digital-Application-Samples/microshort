@@ -17,20 +17,24 @@ type Config = {
   domain: string;
 };
 
+// In-memory config cache
 let cachedConfig: Config | null = null;
 let cacheTimestamp = 0;
 
+// Read config from disk
 async function loadConfig(): Promise<Config> {
   const data = await fs.readFile(CONFIG_PATH, 'utf-8');
   return JSON.parse(data);
 }
 
+// Save config to disk and update cache
 async function saveConfig(newConfig: Config): Promise<void> {
   await fs.writeFile(CONFIG_PATH, JSON.stringify(newConfig, null, 2), 'utf-8');
   cachedConfig = newConfig;
   cacheTimestamp = Date.now();
 }
 
+// Get config, using cache if valid
 async function getConfig(): Promise<Config> {
   if (cachedConfig && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
     return cachedConfig;
@@ -120,6 +124,7 @@ app.get('/health', (_req: Request, res: Response): void => {
   res.status(200).send('OK');
 });
 
+// Swagger/OpenAPI configuration with dev/prod fallback
 const swaggerSpec = swaggerJsdoc({
   definition: {
     openapi: '3.0.0',
@@ -131,13 +136,15 @@ const swaggerSpec = swaggerJsdoc({
   },
   apis: [
     isDev
-      ? path.join(__dirname, '../src/index.ts')  // ts-node during dev
-      : path.join(__dirname, '*.js'),            // compiled JS during prod
+      ? path.join(__dirname, '../src/index.ts')  // used during development
+      : path.join(__dirname, '*.js'),            // used in production after build
   ],
 });
 
+// Serve OpenAPI docs at /docs
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+// Start HTTP server
 app.listen(PORT, () => {
   console.log(`Config service running on port ${PORT}`);
 });
