@@ -54,7 +54,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tag image
-        run: docker tag microshort-config-service ghcr.io/${{ github.repository_owner }}/microshort-config-service:latest
+        run: docker tag microshort-config-service ghcr.io/pxl-digital-application-samples/microshort-config-service:latest
+
 
       - name: Push image
         run: docker push ghcr.io/${{ github.repository_owner }}/microshort-config-service:latest
