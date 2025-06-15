@@ -1,0 +1,81 @@
+services:
+  # Config Service
+  config-service:
+    build: ./services/config-service
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Auth Service
+  auth-service:
+    build: ./services/auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - DB_HOST=auth-db
+      - DB_PORT=5432
+      - DB_NAME=auth
+      - DB_USER=authuser
+      - DB_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Auth Database
+  auth-db:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_DB=auth
+      - POSTGRES_USER=authuser
+      - POSTGRES_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+      - ./services/auth-service/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authuser -d auth"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # URL Service (placeholder)
+  # url-service:
+  #   build: ./services/url-service
+  #   depends_on:
+  #     - auth-service
+  #     - config-service
+
+  # Redirect Service (placeholder)
+  # redirect-service:
+  #   build: ./services/redirect-service
+  #   depends_on:
+  #     - url-service
+
+  # Analytics Service (placeholder)
+  # analytics-service:
+  #   build: ./services/analytics-service
+  #   depends_on:
+  #     - redirect-service
+
+  # Admin Service (placeholder)
+  # admin-service:
+  #   build: ./services/admin-service
+  #   depends_on:
+  #     - auth-service
+  #     - url-service
+  #     - analytics-service
+
+volumes:
+  auth-db-data:

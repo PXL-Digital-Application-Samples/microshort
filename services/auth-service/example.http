@@ -1,0 +1,45 @@
+### Health Check
+GET http://localhost:3001/health
+
+### Register a new user
+POST http://localhost:3001/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "testpassword123"
+}
+
+### Login
+POST http://localhost:3001/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "testpassword123"
+}
+
+### Generate API Key (replace with actual JWT token)
+POST http://localhost:3001/auth/api-keys
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Content-Type: application/json
+
+{
+  "name": "Development Key"
+}
+
+### Validate API Key
+POST http://localhost:3001/auth/validate
+Content-Type: application/json
+
+{
+  "apiKey": "msh_V1StGXR8Z5jdHi6B4myT1CxZ5dPf9eR"
+}
+
+### List API Keys (requires JWT)
+GET http://localhost:3001/auth/api-keys
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+### Revoke API Key (requires JWT)
+DELETE http://localhost:3001/auth/api-keys/1
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...

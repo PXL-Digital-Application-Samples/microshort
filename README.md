@@ -17,14 +17,14 @@ The **microshort** system provides basic URL shortening capabilities as a modula
 
 ## Microservices Architecture
 
-| Service           | Language             | Description                                                                                    |
-| ----------------- | -------------------- | ---------------------------------------------------------------------------------------------- |
-| config-service    | Node.js / TypeScript | Provides shared configuration settings (e.g., domain). Serves JSON-based config via REST.      |
-| auth-service      | Node.js              | Manages user authentication and API key issuance. Uses JWT and simple REST endpoints.          |
-| url-service       | Python               | Handles business logic for slug generation, URL validation, and storage in MySQL.              |
-| redirect-service  | C++                  | Highly efficient redirection layer for resolving short URLs and forwarding requests.           |
-| analytics-service | Java                 | Collects and processes click logs. Stores data in MongoDB and provides aggregated statistics.  |
-| admin-service     | Go                   | Exposes management APIs for reviewing users, links, and analytics. Lightweight and concurrent. |
+| Service           | Language             | Description                                                                                      |
+| ----------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| config-service    | Node.js / TypeScript | Provides shared configuration settings (e.g., domain). Serves JSON-based config via REST.        |
+| auth-service      | Node.js              | User authentication and API key management. PostgreSQL storage with JWT tokens.                  |
+| url-service       | Python               | Handles business logic for slug generation, URL validation, and storage in MySQL.                |
+| redirect-service  | C++                  | Highly efficient redirection layer for resolving short URLs and forwarding requests.             |
+| analytics-service | Java                 | Collects and processes click logs. Stores data in MongoDB and provides aggregated statistics.    |
+| admin-service     | Go                   | Exposes management APIs for reviewing users, links, and analytics. Lightweight and concurrent.   |
 
 ## Request Flow Example
 
@@ -50,31 +50,62 @@ This ensures flexibility across environments and allows services to locate the d
 * Configuration values are loaded via a shared `.env` file
 * Service discovery is handled by internal DNS in Docker or Kubernetes
 
-## Directory Structure
+## Quick Start
 
+```bash
+# Linux/Mac
+chmod +x quickstart.sh
+./quickstart.sh
+
+# Windows PowerShell
+.\quickstart.ps1
+
+# Or manually:
+docker compose up -d
 ```
-microshort/
-├── compose.yml
-├── .env
-└── services/
-    ├── config-service/      # Node.js / TypeScript
-    ├── auth-service/        # Node.js
-    ├── url-service/         # Python
-    ├── redirect-service/    # C++
-    ├── analytics-service/   # Java
-    └── admin-service/       # Go
+
+The quickstart scripts will:
+- Build and start all services
+- Wait for services to be healthy
+- Display service URLs
+- Show example API commands
+
+To stop services:
+```bash
+docker compose down
 ```
+
+To view logs:
+```bash
+docker compose logs -f
+```
+
+## Services
+
+### Config Service
+- **Port**: 3000
+- **Docs**: http://localhost:3000/docs
+- **Purpose**: Provides shared configuration (domain, etc.)
+
+### Auth Service
+- **Port**: 3001
+- **Purpose**: User registration, login, API key management
+- **Storage**: PostgreSQL
+- **Features**:
+  - JWT-based authentication
+  - API key generation with format: `msh_<32-char-nanoid>`
+  - User management endpoints
+
+## Testing
+
+* Unit and integration tests for individual services
+* Health check endpoints for container readiness
 
 ## Possible Future Features
 
 * Web frontend for user interaction
 * Notification hooks (e.g., Slack, email)
 * Admin-editable configuration via the config-service
-
-## Testing
-
-* Unit and integration tests for individual services
-* Health check endpoints for container readiness
 
 ---
 
