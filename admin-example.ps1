@@ -111,3 +111,5 @@ $health.services | ForEach-Object {
 Write-Host "`n=== Admin Demo Complete! ===" -ForegroundColor Cyan
 Write-Host "Admin API key saved for future use: $adminApiKey" -ForegroundColor Yellow
 Write-Host "Admin service URL: http://localhost:3003" -ForegroundColor Yellow
+Write-Host "`nAccess the web dashboard at: http://localhost:3004" -ForegroundColor Cyan
+Write-Host "Use the admin API key to login to the dashboard" -ForegroundColor Yellow

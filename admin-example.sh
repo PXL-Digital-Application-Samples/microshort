@@ -105,3 +105,5 @@ echo $HEALTH | jq -r '.services[] | "     - \(.service): \(.status)"'
 echo -e "\n\033[36m=== Admin Demo Complete! ===\033[0m"
 echo -e "\033[33mAdmin API key saved for future use: $ADMIN_API_KEY\033[0m"
 echo -e "\033[33mAdmin service URL: http://localhost:3003\033[0m"
+echo -e "\n\033[36mAccess the web dashboard at: http://localhost:3004\033[0m"
+echo -e "\033[33mUse the admin API key to login to the dashboard\033[0m"

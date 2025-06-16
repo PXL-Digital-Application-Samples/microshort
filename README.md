@@ -25,6 +25,7 @@ The **microshort** system provides basic URL shortening capabilities as a modula
 | redirect-service  | Node.js              | High-performance redirect handler with caching. Public-facing service for short URLs.            |
 | analytics-service | Java                 | Collects and processes click logs. Stores data in MongoDB and provides aggregated statistics.    |
 | admin-service     | Node.js              | Administrative API aggregating data from all services. Ready for web UI integration.             |
+| admin-ui          | VanJS + htm          | Web dashboard for system administration. Zero-build-tool approach with modern reactive UI.       |
 
 ## Request Flow Example
 
@@ -39,6 +40,7 @@ The **microshort** system provides basic URL shortening capabilities as a modula
    - View dashboard statistics
    - Manage users and URLs
    - Monitor service health
+6. Access the web-based `admin-ui` at http://localhost:3004 for visual management
 
 ## Configuration
 
@@ -129,7 +131,18 @@ docker compose logs -f
   - User and URL management
   - Service health monitoring
   - No direct DB access - uses microservice APIs
-  - CORS-enabled for future web UI
+  - CORS-enabled for web UI
+
+### Admin UI
+- **Port**: 3004
+- **Purpose**: Web-based admin dashboard
+- **URL**: http://localhost:3004
+- **Features**:
+  - Built with VanJS + htm (no build tools)
+  - Real-time service health monitoring
+  - User and URL management interface
+  - System configuration
+  - Responsive design
 
 ## Testing
 

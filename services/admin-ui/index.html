@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microshort Admin</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app"></div>
+    
+    <!-- VanJS -->
+    <script type="module">
+        import van from "https://cdn.jsdelivr.net/gh/vanjs-org/van/public/van-1.5.2.min.js";
+        import htm from "https://unpkg.com/htm@3/dist/htm.module.js";
+        
+        // Initialize htm with VanJS
+        const html = htm.bind((tag, props, ...children) => {
+            if (typeof tag === 'string') {
+                return van.tags[tag](props || {}, ...children);
+            }
+            return tag(props || {}, ...children);
+        });
+        
+        // Import app
+        import { App } from "./app.js";
+        
+        // Mount app
+        van.add(document.getElementById('app'), App(van, html));
+    </script>
+</body>
+</html>

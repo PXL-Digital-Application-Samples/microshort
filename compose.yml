@@ -43,15 +43,28 @@ services:
       - POSTGRES_DB=auth
       - POSTGRES_USER=authuser
       - POSTGRES_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
-    volumes:
-      - auth-db-data:/var/lib/postgresql/data
-      - ./services/auth-service/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U authuser -d auth"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # Admin UI
+  admin-ui:
+    build: ./services/admin-ui
+    ports:
+      - "3004:3004"
+    environment:
+      - PORT=3004
+    depends_on:
+      - admin-service
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3004', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # URL Service
   url-service:
