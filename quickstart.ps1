@@ -3,31 +3,37 @@ Write-Host "Starting microshort services..." -ForegroundColor Green
 # Start services
 docker compose up -d
 
-# Wait for services to be ready
-Write-Host "`nWaiting for services to start..." -ForegroundColor Yellow
-Start-Sleep -Seconds 15
+# Wait for databases to initialize
+Write-Host "`nWaiting for databases to initialize..." -ForegroundColor Yellow
+Start-Sleep -Seconds 10
 
-# Check health
-Write-Host "`nChecking service health:" -ForegroundColor Cyan
-try {
-    $null = Invoke-RestMethod -Uri "http://localhost:3000/health" -Method Get
-    Write-Host " ✓ Config service is healthy" -ForegroundColor Green
-} catch {
-    Write-Host " ✗ Config service is not ready" -ForegroundColor Red
-}
+# Wait for services to be ready with retries
+Write-Host "Waiting for services to start..." -ForegroundColor Yellow
+$maxAttempts = 30
+$services = @(
+    @{Name="Config"; Port=3000},
+    @{Name="Auth"; Port=3001},
+    @{Name="URL"; Port=3002}
+)
 
-try {
-    $null = Invoke-RestMethod -Uri "http://localhost:3001/health" -Method Get
-    Write-Host " ✓ Auth service is healthy" -ForegroundColor Green
-} catch {
-    Write-Host " ✗ Auth service is not ready" -ForegroundColor Red
-}
-
-try {
-    $null = Invoke-RestMethod -Uri "http://localhost:3002/health" -Method Get
-    Write-Host " ✓ URL service is healthy" -ForegroundColor Green
-} catch {
-    Write-Host " ✗ URL service is not ready" -ForegroundColor Red
+foreach ($service in $services) {
+    $attempts = 0
+    $ready = $false
+    
+    while (-not $ready -and $attempts -lt $maxAttempts) {
+        try {
+            $null = Invoke-RestMethod -Uri "http://localhost:$($service.Port)/health" -Method Get -TimeoutSec 2
+            $ready = $true
+            Write-Host " ✓ $($service.Name) service is healthy" -ForegroundColor Green
+        } catch {
+            $attempts++
+            if ($attempts -ge $maxAttempts) {
+                Write-Host " ✗ $($service.Name) service failed to start" -ForegroundColor Red
+            } else {
+                Start-Sleep -Seconds 2
+            }
+        }
+    }
 }
 
 Write-Host "`nServices are running!" -ForegroundColor Green

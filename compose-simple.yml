@@ -1,0 +1,70 @@
+services:
+  # Config Service
+  config-service:
+    build: ./services/config-service
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+
+  # Auth Service
+  auth-service:
+    build: ./services/auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - DB_HOST=auth-db
+      - DB_PORT=5432
+      - DB_NAME=auth
+      - DB_USER=authuser
+      - DB_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+    depends_on:
+      - auth-db
+
+  # Auth Database
+  auth-db:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_DB=auth
+      - POSTGRES_USER=authuser
+      - POSTGRES_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+      - ./services/auth-service/init:/docker-entrypoint-initdb.d
+
+  # URL Service
+  url-service:
+    build: ./services/url-service
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - DB_HOST=url-db
+      - DB_PORT=3306
+      - DB_NAME=urlshort
+      - DB_USER=urluser
+      - DB_PASSWORD=${URL_DB_PASSWORD:-urlpass}
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - CONFIG_SERVICE_URL=http://config-service:3000
+    depends_on:
+      - url-db
+      - auth-service
+      - config-service
+
+  # URL Database
+  url-db:
+    image: mysql:8-oracle
+    environment:
+      - MYSQL_DATABASE=urlshort
+      - MYSQL_USER=urluser
+      - MYSQL_PASSWORD=${URL_DB_PASSWORD:-urlpass}
+      - MYSQL_ROOT_PASSWORD=${URL_DB_ROOT_PASSWORD:-rootpass}
+    volumes:
+      - url-db-data:/var/lib/mysql
+      - ./services/url-service/init:/docker-entrypoint-initdb.d
+
+volumes:
+  auth-db-data:
+  url-db-data:
