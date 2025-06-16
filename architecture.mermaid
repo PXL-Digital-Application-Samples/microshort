@@ -1,0 +1,46 @@
+---
+config:
+  layout: fixed
+---
+flowchart TD
+ subgraph subGraph0["External Users"]
+    direction LR
+        User["User (API Client)"]
+        Visitor["Visitor (Browser)"]
+        Admin["Administrator"]
+  end
+ subgraph subGraph1["Entrypoints & UI"]
+        RedirectService["Redirect Service (Node.js)"]
+        AdminUI["Admin UI (VanJS + htm)"]
+  end
+ subgraph subGraph2["Core Microservices"]
+        AuthService["Auth Service (Node.js)"]
+        URLService["URL Service (Node.js)"]
+        AnalyticsService["Analytics Service (Node.js)"]
+        AdminService["Admin Service (Node.js)"]
+        ConfigService["Config Service (Node.js/TS)"]
+  end
+ subgraph subGraph3["Data Stores & Caches"]
+        PostgresDB[("PostgreSQL")]
+        MySQLDB[("MySQL")]
+        ClickHouseDB[("ClickHouse")]
+        Cache[("In-Memory Cache")]
+  end
+    Visitor -- 1: GET /{short_slug} --> RedirectService
+    RedirectService -- 2: Get Long URL --> URLService
+    RedirectService -- Caches URL --> Cache
+    RedirectService -- 3: Log Click --> AnalyticsService
+    RedirectService -- 4: HTTP 301 Redirect --> Visitor
+    User -- Register / Login --> AuthService
+    User -- POST /urls (API Key) --> URLService
+    URLService -- Validate API Key --> AuthService
+    Admin -- Access Dashboard --> AdminUI
+    AdminUI -- REST API Calls --> AdminService
+    AuthService --- PostgresDB
+    URLService --- MySQLDB
+    AnalyticsService --- ClickHouseDB
+    AdminService -- Aggregates Data --> URLService & AuthService & AnalyticsService
+    URLService -- Reads Config --> ConfigService
+    AuthService -- Reads Config --> ConfigService
+    AdminService -- Reads Config --> ConfigService
+    RedirectService -- Reads Config --> ConfigService
