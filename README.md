@@ -21,7 +21,7 @@ The **microshort** system provides basic URL shortening capabilities as a modula
 | ----------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
 | config-service    | Node.js / TypeScript | Provides shared configuration settings (e.g., domain). Serves JSON-based config via REST.        |
 | auth-service      | Node.js              | User authentication and API key management. PostgreSQL storage with JWT tokens.                  |
-| url-service       | Python               | Handles business logic for slug generation, URL validation, and storage in MySQL.                |
+| url-service       | Node.js              | Handles URL shortening logic, slug generation, and storage in MySQL.                             |
 | redirect-service  | C++                  | Highly efficient redirection layer for resolving short URLs and forwarding requests.             |
 | analytics-service | Java                 | Collects and processes click logs. Stores data in MongoDB and provides aggregated statistics.    |
 | admin-service     | Go                   | Exposes management APIs for reviewing users, links, and analytics. Lightweight and concurrent.   |
@@ -96,10 +96,21 @@ docker compose logs -f
   - API key generation with format: `msh_<32-char-nanoid>`
   - User management endpoints
 
+### URL Service
+- **Port**: 3002
+- **Purpose**: URL shortening and management
+- **Storage**: MySQL
+- **Features**:
+  - Create short URLs with random or custom slugs
+  - Track click counts
+  - API key validation via auth-service
+  - Domain configuration from config-service
+
 ## Testing
 
 * Unit and integration tests for individual services
 * Health check endpoints for container readiness
+* Full workflow examples in `full-example.sh` and `full-example.ps1`
 
 ## Possible Future Features
 

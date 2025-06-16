@@ -5,7 +5,7 @@ docker compose up -d
 
 # Wait for services to be ready
 Write-Host "`nWaiting for services to start..." -ForegroundColor Yellow
-Start-Sleep -Seconds 10
+Start-Sleep -Seconds 15
 
 # Check health
 Write-Host "`nChecking service health:" -ForegroundColor Cyan
@@ -23,9 +23,17 @@ try {
     Write-Host " ✗ Auth service is not ready" -ForegroundColor Red
 }
 
+try {
+    $null = Invoke-RestMethod -Uri "http://localhost:3002/health" -Method Get
+    Write-Host " ✓ URL service is healthy" -ForegroundColor Green
+} catch {
+    Write-Host " ✗ URL service is not ready" -ForegroundColor Red
+}
+
 Write-Host "`nServices are running!" -ForegroundColor Green
 Write-Host "Config service: http://localhost:3000/docs"
 Write-Host "Auth service: http://localhost:3001"
+Write-Host "URL service: http://localhost:3002"
 
 Write-Host "`nTo test auth service:" -ForegroundColor Cyan
 Write-Host "1. Register a user:" -ForegroundColor Yellow
