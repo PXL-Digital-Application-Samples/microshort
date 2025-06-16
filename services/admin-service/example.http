@@ -1,0 +1,35 @@
+### Health Check
+GET http://localhost:3003/health
+
+### Get Dashboard (requires admin API key)
+GET http://localhost:3003/admin/dashboard
+X-API-Key: msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+### List All Users
+GET http://localhost:3003/admin/users
+X-API-Key: msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+### List All URLs
+GET http://localhost:3003/admin/urls
+X-API-Key: msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+### Search URLs
+GET http://localhost:3003/admin/search/urls?q=test
+X-API-Key: msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+### Get Configuration
+GET http://localhost:3003/admin/config
+X-API-Key: msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+### Update Configuration
+PUT http://localhost:3003/admin/config
+X-API-Key: msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Content-Type: application/json
+
+{
+  "domain": "http://localhost:8080"
+}
+
+### Check Service Health
+GET http://localhost:3003/admin/health/services
+X-API-Key: msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx

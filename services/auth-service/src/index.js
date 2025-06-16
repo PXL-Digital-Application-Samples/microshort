@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { createUser, findUserByEmail, createApiKey, validateApiKey, getUserApiKeys, revokeApiKey } from './db.js';
+import { createUser, findUserByEmail, createApiKey, validateApiKey, getUserApiKeys, revokeApiKey, getAllUsers, getAuthStats } from './db.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
@@ -94,6 +94,49 @@ app.get('/auth/me', verifyToken, async (req, res) => {
     });
   } catch (err) {
     console.error('Profile error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Get all users (requires admin API key)
+app.get('/admin/users', async (req, res) => {
+  try {
+    const apiKey = req.headers['x-api-key'];
+    if (!apiKey) {
+      return res.status(401).json({ error: 'API key required' });
+    }
+
+    // Check if admin (for now, check if user ID is 1)
+    const keyData = await validateApiKey(apiKey);
+    if (!keyData || keyData.user_id !== 1) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const users = await getAllUsers();
+    res.json({ users });
+  } catch (err) {
+    console.error('Admin users error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Get auth stats
+app.get('/admin/stats', async (req, res) => {
+  try {
+    const apiKey = req.headers['x-api-key'];
+    if (!apiKey) {
+      return res.status(401).json({ error: 'API key required' });
+    }
+
+    const keyData = await validateApiKey(apiKey);
+    if (!keyData || keyData.user_id !== 1) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const stats = await getAuthStats();
+    res.json(stats);
+  } catch (err) {
+    console.error('Admin stats error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

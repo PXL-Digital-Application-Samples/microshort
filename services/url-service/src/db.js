@@ -72,3 +72,34 @@ export async function checkHealth() {
     return false;
   }
 }
+
+// Admin: Get all URLs
+export async function getAllUrls() {
+  const [rows] = await pool.execute(
+    'SELECT * FROM urls ORDER BY created_at DESC LIMIT 1000'
+  );
+  
+  return rows;
+}
+
+// Admin: Get URL statistics
+export async function getUrlStats() {
+  const [[totalStats]] = await pool.execute(
+    'SELECT COUNT(*) as total_urls, SUM(clicks) as total_clicks FROM urls'
+  );
+  
+  const [[recentStats]] = await pool.execute(
+    'SELECT COUNT(*) as recent_urls FROM urls WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)'
+  );
+  
+  const [topUrls] = await pool.execute(
+    'SELECT slug, long_url, clicks FROM urls ORDER BY clicks DESC LIMIT 10'
+  );
+  
+  return {
+    totalUrls: parseInt(totalStats.total_urls),
+    totalClicks: parseInt(totalStats.total_clicks || 0),
+    recentUrls: parseInt(recentStats.recent_urls),
+    topUrls: topUrls
+  };
+}

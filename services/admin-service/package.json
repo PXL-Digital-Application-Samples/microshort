@@ -1,0 +1,16 @@
+{
+  "name": "admin-service",
+  "version": "1.0.0",
+  "description": "Admin service for microshort platform",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "node-fetch": "^3.3.2",
+    "cors": "^2.8.5"
+  }
+}

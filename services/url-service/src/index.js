@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import fetch from 'node-fetch';
-import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, incrementClicks } from './db.js';
+import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, incrementClicks, getAllUrls, getUrlStats } from './db.js';
 import { nanoid } from 'nanoid';
 
 const app = express();
@@ -184,6 +184,82 @@ app.delete('/urls/:slug', validateApiKey, async (req, res) => {
     res.json({ message: 'URL deleted', slug });
   } catch (err) {
     console.error('Delete URL error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Get all URLs
+app.get('/admin/urls', async (req, res) => {
+  try {
+    const apiKey = req.headers['x-api-key'];
+    if (!apiKey) {
+      return res.status(401).json({ error: 'API key required' });
+    }
+
+    // Validate admin key via auth service
+    const authResponse = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey })
+    });
+    
+    if (!authResponse.ok) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+    
+    const authData = await authResponse.json();
+    if (authData.userId !== 1) { // Simple admin check - user ID 1
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const urls = await getAllUrls();
+    const domain = await getDomain();
+    
+    const formattedUrls = urls.map(u => ({
+      id: u.id,
+      shortUrl: `${domain}/${u.slug}`,
+      longUrl: u.long_url,
+      slug: u.slug,
+      clicks: u.clicks,
+      userId: u.user_id,
+      createdAt: u.created_at
+    }));
+    
+    res.json({ urls: formattedUrls });
+  } catch (err) {
+    console.error('Admin URLs error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Get URL stats
+app.get('/admin/stats', async (req, res) => {
+  try {
+    const apiKey = req.headers['x-api-key'];
+    if (!apiKey) {
+      return res.status(401).json({ error: 'API key required' });
+    }
+
+    // Validate admin key
+    const authResponse = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey })
+    });
+    
+    if (!authResponse.ok) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+    
+    const authData = await authResponse.json();
+    if (authData.userId !== 1) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const stats = await getUrlStats();
+    res.json(stats);
+  } catch (err) {
+    console.error('Admin stats error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

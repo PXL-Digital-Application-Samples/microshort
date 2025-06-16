@@ -10,7 +10,8 @@ $services = @(
     @{Name="Config Service"; Url="http://localhost:3000/health"},
     @{Name="Auth Service"; Url="http://localhost:3001/health"},
     @{Name="URL Service"; Url="http://localhost:3002/health"},
-    @{Name="Redirect Service"; Url="http://localhost:8080/health"}
+    @{Name="Redirect Service"; Url="http://localhost:8080/health"},
+    @{Name="Admin Service"; Url="http://localhost:3003/health"}
 )
 
 foreach ($service in $services) {

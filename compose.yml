@@ -126,13 +126,29 @@ services:
   #   depends_on:
   #     - redirect-service
 
-  # Admin Service (placeholder)
-  # admin-service:
-  #   build: ./services/admin-service
-  #   depends_on:
-  #     - auth-service
-  #     - url-service
-  #     - analytics-service
+  # Admin Service
+  admin-service:
+    build: ./services/admin-service
+    ports:
+      - "3003:3003"
+    environment:
+      - PORT=3003
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - URL_SERVICE_URL=http://url-service:3002
+      - CONFIG_SERVICE_URL=http://config-service:3000
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      url-service:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3003/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   auth-db-data:

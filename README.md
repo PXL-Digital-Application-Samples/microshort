@@ -24,7 +24,7 @@ The **microshort** system provides basic URL shortening capabilities as a modula
 | url-service       | Node.js              | Handles URL shortening logic, slug generation, and storage in MySQL.                             |
 | redirect-service  | Node.js              | High-performance redirect handler with caching. Public-facing service for short URLs.            |
 | analytics-service | Java                 | Collects and processes click logs. Stores data in MongoDB and provides aggregated statistics.    |
-| admin-service     | Go                   | Exposes management APIs for reviewing users, links, and analytics. Lightweight and concurrent.   |
+| admin-service     | Node.js              | Administrative API aggregating data from all services. Ready for web UI integration.             |
 
 ## Request Flow Example
 
@@ -35,7 +35,10 @@ The **microshort** system provides basic URL shortening capabilities as a modula
    - Returns a 301 redirect to the destination
    - Logs the visit for analytics
 4. The redirect is logged by `analytics-service` (future)
-5. Admins query data using `admin-service` (future)
+5. Admins use `admin-service` to monitor the system:
+   - View dashboard statistics
+   - Manage users and URLs
+   - Monitor service health
 
 ## Configuration
 
@@ -118,11 +121,22 @@ docker compose logs -f
   - 404 handling for invalid URLs
   - No storage required - uses url-service API
 
+### Admin Service
+- **Port**: 3003
+- **Purpose**: Administrative API for platform management
+- **Features**:
+  - Dashboard with system statistics
+  - User and URL management
+  - Service health monitoring
+  - No direct DB access - uses microservice APIs
+  - CORS-enabled for future web UI
+
 ## Testing
 
 * Unit and integration tests for individual services
 * Health check endpoints for container readiness
-* Full workflow examples in `full-example.sh` and `full-example.ps1`
+* Full workflow examples: `full-example.sh` and `full-example.ps1`
+* Admin examples: `admin-example.sh` and `admin-example.ps1`
 
 ## Possible Future Features
 

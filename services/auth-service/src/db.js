@@ -85,3 +85,39 @@ export async function checkHealth() {
     return false;
   }
 }
+
+// Admin: Get all users
+export async function getAllUsers() {
+  const users = await sql`
+    SELECT id, email, created_at
+    FROM users
+    ORDER BY created_at DESC
+  `;
+  return users;
+}
+
+// Admin: Get auth statistics
+export async function getAuthStats() {
+  const [userStats] = await sql`
+    SELECT COUNT(*) as total_users
+    FROM users
+  `;
+  
+  const [keyStats] = await sql`
+    SELECT COUNT(*) as total_keys
+    FROM api_keys
+    WHERE revoked_at IS NULL
+  `;
+  
+  const recentUsers = await sql`
+    SELECT COUNT(*) as count
+    FROM users
+    WHERE created_at >= NOW() - INTERVAL '7 days'
+  `;
+  
+  return {
+    totalUsers: parseInt(userStats.total_users),
+    totalApiKeys: parseInt(keyStats.total_keys),
+    recentUsers: parseInt(recentUsers[0].count)
+  };
+}

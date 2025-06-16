@@ -8,7 +8,7 @@ docker compose up -d
 
 # Wait for services to be ready
 echo "Waiting for services to start..."
-sleep 20
+sleep 25
 
 # Check health
 echo -e "\nChecking service health:"
@@ -16,12 +16,14 @@ curl -s http://localhost:3000/health && echo " ✓ Config service is healthy"
 curl -s http://localhost:3001/health && echo " ✓ Auth service is healthy"
 curl -s http://localhost:3002/health && echo " ✓ URL service is healthy"
 curl -s http://localhost:8080/health && echo " ✓ Redirect service is healthy"
+curl -s http://localhost:3003/health && echo " ✓ Admin service is healthy"
 
 echo -e "\nServices are running!"
 echo "Config service: http://localhost:3000/docs"
 echo "Auth service: http://localhost:3001"
 echo "URL service: http://localhost:3002"
 echo "Redirect service: http://localhost:8080 (public-facing)"
+echo "Admin service: http://localhost:3003"
 
 echo -e "\nTo test auth service:"
 echo "1. Register a user:"

@@ -127,6 +127,20 @@ Returns:
 ### `GET /health`
 Health check endpoint.
 
+### Admin Endpoints (require admin API key)
+
+### `GET /admin/users`
+List all users (admin only - user ID 1).
+```
+X-API-Key: msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+### `GET /admin/stats`
+Get authentication statistics (admin only).
+```
+X-API-Key: msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
 ## Environment Variables
 
 - `PORT` - Service port (default: 3001)
