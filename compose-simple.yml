@@ -30,9 +30,18 @@ services:
       - POSTGRES_DB=auth
       - POSTGRES_USER=authuser
       - POSTGRES_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
-    volumes:
-      - auth-db-data:/var/lib/postgresql/data
-      - ./services/auth-service/init:/docker-entrypoint-initdb.d
+      # Redirect Service
+  redirect-service:
+    build: ./services/redirect-service
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - URL_SERVICE_URL=http://url-service:3002
+      - CONFIG_SERVICE_URL=http://config-service:3000
+    depends_on:
+      - url-service
+      - config-service
 
   # URL Service
   url-service:

@@ -22,17 +22,20 @@ The **microshort** system provides basic URL shortening capabilities as a modula
 | config-service    | Node.js / TypeScript | Provides shared configuration settings (e.g., domain). Serves JSON-based config via REST.        |
 | auth-service      | Node.js              | User authentication and API key management. PostgreSQL storage with JWT tokens.                  |
 | url-service       | Node.js              | Handles URL shortening logic, slug generation, and storage in MySQL.                             |
-| redirect-service  | C++                  | Highly efficient redirection layer for resolving short URLs and forwarding requests.             |
+| redirect-service  | Node.js              | High-performance redirect handler with caching. Public-facing service for short URLs.            |
 | analytics-service | Java                 | Collects and processes click logs. Stores data in MongoDB and provides aggregated statistics.    |
 | admin-service     | Go                   | Exposes management APIs for reviewing users, links, and analytics. Lightweight and concurrent.   |
 
 ## Request Flow Example
 
 1. A user registers using `auth-service` and receives an API key
-2. The user submits a long URL to `url-service` and gets back a short URL, such as `https://sho.rt/abc123`
-3. A client accesses the short URL, which triggers a redirect by `redirect-service`
-4. The redirect is logged by `analytics-service`
-5. Admins query data using `admin-service`
+2. The user submits a long URL to `url-service` and gets back a short URL, such as `http://localhost:8080/abc123`
+3. A visitor accesses the short URL via `redirect-service`, which:
+   - Queries `url-service` for the long URL (with caching)
+   - Returns a 301 redirect to the destination
+   - Logs the visit for analytics
+4. The redirect is logged by `analytics-service` (future)
+5. Admins query data using `admin-service` (future)
 
 ## Configuration
 
@@ -105,6 +108,15 @@ docker compose logs -f
   - Track click counts
   - API key validation via auth-service
   - Domain configuration from config-service
+
+### Redirect Service
+- **Port**: 8080
+- **Purpose**: Public-facing redirect handler
+- **Features**:
+  - Fast redirects with in-memory caching
+  - Home page at root domain
+  - 404 handling for invalid URLs
+  - No storage required - uses url-service API
 
 ## Testing
 

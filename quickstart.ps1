@@ -5,7 +5,7 @@ docker compose up -d
 
 # Wait for databases to initialize
 Write-Host "`nWaiting for databases to initialize..." -ForegroundColor Yellow
-Start-Sleep -Seconds 10
+Start-Sleep -Seconds 15
 
 # Wait for services to be ready with retries
 Write-Host "Waiting for services to start..." -ForegroundColor Yellow
@@ -13,7 +13,8 @@ $maxAttempts = 30
 $services = @(
     @{Name="Config"; Port=3000},
     @{Name="Auth"; Port=3001},
-    @{Name="URL"; Port=3002}
+    @{Name="URL"; Port=3002},
+    @{Name="Redirect"; Port=8080}
 )
 
 foreach ($service in $services) {
@@ -40,6 +41,7 @@ Write-Host "`nServices are running!" -ForegroundColor Green
 Write-Host "Config service: http://localhost:3000/docs"
 Write-Host "Auth service: http://localhost:3001"
 Write-Host "URL service: http://localhost:3002"
+Write-Host "Redirect service: http://localhost:8080 (public-facing)"
 
 Write-Host "`nTo test auth service:" -ForegroundColor Cyan
 Write-Host "1. Register a user:" -ForegroundColor Yellow

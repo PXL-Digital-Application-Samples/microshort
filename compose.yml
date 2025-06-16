@@ -99,12 +99,26 @@ services:
       retries: 5
       start_period: 30s
 
-  # Redirect Service (placeholder)
-  # redirect-service:
-  #   build: ./services/redirect-service
-  #   depends_on:
-  #     - url-service
-  #     - config-service
+  # Redirect Service
+  redirect-service:
+    build: ./services/redirect-service
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - URL_SERVICE_URL=http://url-service:3002
+      - CONFIG_SERVICE_URL=http://config-service:3000
+    depends_on:
+      url-service:
+        condition: service_healthy
+      config-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # Analytics Service (placeholder)
   # analytics-service:

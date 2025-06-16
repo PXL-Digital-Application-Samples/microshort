@@ -49,6 +49,25 @@ $listResponse.urls | ForEach-Object {
     Write-Host "   - $($_.shortUrl) (clicks: $($_.clicks))"
 }
 
+# Step 6: Test the redirect service
+Write-Host "`n6. Testing redirect service..." -ForegroundColor Yellow
+try {
+    # Test with -MaximumRedirection 0 to see the redirect without following it
+    $redirectTest = Invoke-WebRequest -Uri "http://localhost:8080/$($urlResponse.slug)" `
+        -MaximumRedirection 0 -ErrorAction SilentlyContinue
+    
+    if ($redirectTest.StatusCode -eq 301) {
+        Write-Host "✓ Redirect service works! Returns 301 to: $($redirectTest.Headers.Location)" -ForegroundColor Green
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode -eq 301) {
+        Write-Host "✓ Redirect service works! (301 redirect detected)" -ForegroundColor Green
+    } else {
+        Write-Host "✗ Redirect test failed: $_" -ForegroundColor Red
+    }
+}
+
 Write-Host "`n=== Complete! ===" -ForegroundColor Cyan
 Write-Host "Your API key for future use: $apiKey" -ForegroundColor Yellow
 Write-Host "Your short URL: $($urlResponse.shortUrl)" -ForegroundColor Yellow
+Write-Host "Access it at: http://localhost:8080/$($urlResponse.slug)" -ForegroundColor Cyan

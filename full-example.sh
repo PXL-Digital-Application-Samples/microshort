@@ -50,6 +50,17 @@ URL_COUNT=$(echo $LIST_RESPONSE | jq '.urls | length')
 echo -e "\033[32m✓ Found $URL_COUNT URL(s):\033[0m"
 echo $LIST_RESPONSE | jq -r '.urls[] | "   - \(.shortUrl) (clicks: \(.clicks))"'
 
+# Step 6: Test the redirect service
+echo -e "\n\033[33m6. Testing redirect service...\033[0m"
+REDIRECT_RESPONSE=$(curl -s -I http://localhost:8080/$SLUG)
+if echo "$REDIRECT_RESPONSE" | grep -q "301"; then
+  LOCATION=$(echo "$REDIRECT_RESPONSE" | grep "Location:" | sed 's/Location: //')
+  echo -e "\033[32m✓ Redirect service works! Returns 301 redirect\033[0m"
+else
+  echo -e "\033[31m✗ Redirect test failed\033[0m"
+fi
+
 echo -e "\n\033[36m=== Complete! ===\033[0m"
 echo -e "\033[33mYour API key for future use: $API_KEY\033[0m"
 echo -e "\033[33mYour short URL: $SHORT_URL\033[0m"
+echo -e "\033[36mAccess it at: http://localhost:8080/$SLUG\033[0m"

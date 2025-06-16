@@ -1,0 +1,11 @@
+### Health Check
+GET http://localhost:8080/health
+
+### Home Page
+GET http://localhost:8080/
+
+### Test Redirect (replace with actual slug)
+GET http://localhost:8080/abc123
+
+### Test 404
+GET http://localhost:8080/nonexistent
