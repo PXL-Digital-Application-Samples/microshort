@@ -1,6 +1,17 @@
 #!/bin/bash
 # Make this file executable: chmod +x quickstart.sh
 
+# Ensure .env exists before starting — compose will fail on missing secrets otherwise
+if [ ! -f .env ]; then
+  echo "⚠️  No .env file found. Creating one from .env.example..."
+  cp .env.example .env
+  echo ""
+  echo "  IMPORTANT: .env has been created with placeholder values."
+  echo "  Edit .env with real secrets before deploying to production."
+  echo "  For local development, the placeholders will work as-is."
+  echo ""
+fi
+
 echo "Starting microshort services..."
 
 # Start services

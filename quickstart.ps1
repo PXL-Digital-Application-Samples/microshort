@@ -1,3 +1,12 @@
+if (-not (Test-Path ".env")) {
+  Write-Host "No .env file found. Creating one from .env.example..." -ForegroundColor Yellow
+  Copy-Item ".env.example" ".env"
+  Write-Host ""
+  Write-Host "  IMPORTANT: .env has been created with placeholder values." -ForegroundColor Yellow
+  Write-Host "  Edit .env with real secrets before deploying to production." -ForegroundColor Yellow
+  Write-Host ""
+}
+
 Write-Host "Starting microshort services..." -ForegroundColor Green
 
 # Start services

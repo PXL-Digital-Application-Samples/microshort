@@ -6,7 +6,8 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
-      - CONFIG_WRITE_TOKEN=${CONFIG_WRITE_TOKEN:-dev-config-token-change-in-production}
+      - CONFIG_WRITE_TOKEN=${CONFIG_WRITE_TOKEN:?CONFIG_WRITE_TOKEN must be set in .env}
+      - DOMAIN=${DOMAIN:?DOMAIN must be set in .env (e.g. http://localhost:8080)}
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
       interval: 10s
@@ -25,8 +26,8 @@ services:
       - DB_PORT=5432
       - DB_NAME=auth
       - DB_USER=authuser
-      - DB_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      - DB_PASSWORD=${AUTH_DB_PASSWORD:?AUTH_DB_PASSWORD must be set in .env}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
       - REDIS_URL=redis://redis:6379
     depends_on:
       auth-db:
@@ -46,7 +47,7 @@ services:
     environment:
       - POSTGRES_DB=auth
       - POSTGRES_USER=authuser
-      - POSTGRES_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
+      - POSTGRES_PASSWORD=${AUTH_DB_PASSWORD:?AUTH_DB_PASSWORD must be set in .env}
     volumes:
       - auth-db-data:/var/lib/postgresql/data
       - ./services/auth-service/init:/docker-entrypoint-initdb.d
@@ -68,11 +69,11 @@ services:
       - DB_PORT=3306
       - DB_NAME=urlshort
       - DB_USER=urluser
-      - DB_PASSWORD=${URL_DB_PASSWORD:-urlpass}
+      - DB_PASSWORD=${URL_DB_PASSWORD:?URL_DB_PASSWORD must be set in .env}
       - AUTH_SERVICE_URL=http://auth-service:3001
       - CONFIG_SERVICE_URL=http://config-service:3000
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
-      - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
       - REDIS_URL=redis://redis:6379
     depends_on:
       url-db:
@@ -96,13 +97,13 @@ services:
     environment:
       - MYSQL_DATABASE=urlshort
       - MYSQL_USER=urluser
-      - MYSQL_PASSWORD=${URL_DB_PASSWORD:-urlpass}
-      - MYSQL_ROOT_PASSWORD=${URL_DB_ROOT_PASSWORD:-rootpass}
+      - MYSQL_PASSWORD=${URL_DB_PASSWORD:?URL_DB_PASSWORD must be set in .env}
+      - MYSQL_ROOT_PASSWORD=${URL_DB_ROOT_PASSWORD:?URL_DB_ROOT_PASSWORD must be set in .env}
     volumes:
       - url-db-data:/var/lib/mysql
       - ./services/url-service/init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "urluser", "-p${URL_DB_PASSWORD:-urlpass}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "urluser", "-p${URL_DB_PASSWORD:?URL_DB_PASSWORD must be set in .env}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -118,8 +119,8 @@ services:
       - URL_SERVICE_URL=http://url-service:3002
       - CONFIG_SERVICE_URL=http://config-service:3000
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
-      - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
-      - IP_HASH_SALT=${IP_HASH_SALT:-dev-ip-hash-salt-change-in-production}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
+      - IP_HASH_SALT=${IP_HASH_SALT:?IP_HASH_SALT must be set in .env}
       - REDIS_URL=redis://redis:6379
     depends_on:
       redis:
@@ -147,9 +148,9 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:3001
       - URL_SERVICE_URL=http://url-service:3002
       - CONFIG_SERVICE_URL=http://config-service:3000
-      - CONFIG_WRITE_TOKEN=${CONFIG_WRITE_TOKEN:-dev-config-token-change-in-production}
+      - CONFIG_WRITE_TOKEN=${CONFIG_WRITE_TOKEN:?CONFIG_WRITE_TOKEN must be set in .env}
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
-      - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
     depends_on:
       auth-service:
         condition: service_healthy
@@ -191,8 +192,8 @@ services:
       - PORT=3005
       - CLICKHOUSE_URL=jdbc:clickhouse://clickhouse:8123/analytics
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
-      - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -209,7 +210,7 @@ services:
     environment:
       - CLICKHOUSE_DB=analytics
       - CLICKHOUSE_USER=default
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./services/analytics-service/clickhouse-init:/docker-entrypoint-initdb.d
