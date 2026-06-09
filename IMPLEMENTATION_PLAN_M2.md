@@ -19,6 +19,7 @@ M2 resolves exactly these findings and PLANNING.md items:
 | CR 2.3 | 🔴 | Key validation writes DB on every call | **B** |
 | CR 2.7 | 🔵 | `PUT /config/domain` unauthenticated | **C** |
 | — | — | Rate limiting on login and URL creation | **D** |
+| — | — | Integration test suite (automated M2 acceptance verification) | **E** |
 
 Explicitly **not** in M2 (do not creep):
 - Liveness/readiness split (CR 6.2), graceful shutdown (CR 6.3), structured
@@ -94,7 +95,6 @@ decision themselves.
 
 **Files:**
 - `auth-service/init/01-schema.sql`
-- `auth-service/init/02-migration.sql` ← **NEW**
 - `auth-service/src/db.js`
 - `auth-service/src/index.js`
 - `url-service/src/index.js`
@@ -529,10 +529,10 @@ regenerates `package-lock.json`. Commit both files.
 import rateLimit from 'express-rate-limit';
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,  // 15-minute window
-  limit: 10,                   // 10 attempts per IP per window
+  windowMs: parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000)),
+  limit:    parseInt(process.env.LOGIN_RATE_LIMIT_MAX ?? '10'),
   standardHeaders: 'draft-6',  // separate RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset headers
-  legacyHeaders: false,        // disable X-RateLimit-* (deprecated)
+  legacyHeaders: false,
   message: { error: 'Too many attempts, please try again later' }
 });
 
@@ -543,14 +543,18 @@ app.post('/auth/register', authLimiter, async (req, res) => { ... });
 Apply the limiter as the **first** argument after the path — before any async
 work — so blocked requests are rejected without touching the DB.
 
+`LOGIN_RATE_LIMIT_WINDOW_MS` and `LOGIN_RATE_LIMIT_MAX` allow integration tests
+to use short windows via `compose.test.override.yml` without touching service
+code. Defaults match the spec (15 min / 10 attempts).
+
 #### D3 — url-service: URL creation limiter
 
 ```js
 import rateLimit from 'express-rate-limit';
 
 const urlCreateLimiter = rateLimit({
-  windowMs: 60 * 1000,  // 1-minute window
-  limit: 30,             // 30 new URLs per IP per minute
+  windowMs: parseInt(process.env.URL_RATE_LIMIT_WINDOW_MS ?? String(60 * 1000)),
+  limit:    parseInt(process.env.URL_RATE_LIMIT_MAX ?? '30'),
   standardHeaders: 'draft-6',  // separate RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset headers
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' }
@@ -561,6 +565,9 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => { ... })
 
 The limiter sits **before** `validateApiKey` — reject rate-limited requests
 before spending an HTTP round-trip to auth-service.
+
+`URL_RATE_LIMIT_WINDOW_MS` and `URL_RATE_LIMIT_MAX` serve the same integration
+test purpose as the auth-service env vars. Defaults: 1 min / 30 requests.
 
 #### D4 — Known limitation (intentional)
 
@@ -584,6 +591,307 @@ comment in the code is worth leaving.
 
 ---
 
+### E — Integration test suite (root-level, covers all workstreams)
+
+Goal: turn §5's acceptance criteria into executable assertions runnable with
+`npm test`. This is black-box HTTP — it talks to services only over their
+public APIs and shares **no code** with any service directory.
+
+**Design constraint — independence.** The root `package.json` has **no
+workspaces**, no `dependencies` links to service directories, and no shared
+modules. Each service remains independently installable and testable from its
+own directory. The integration suite is a separate concern in the same repo,
+following PLANNING.md §3's "share contracts, not code" principle.
+
+**Three test groups require clean state** and must run via `npm run test:e2e`
+(fresh DB):
+1. **`roles.test.js`** — needs an empty `users` table (first-registrant-is-admin
+   invariant).
+2. **`rate-limiting.test.js`** — all test requests share one source IP; any test
+   that authenticates contributes to the same rate-limit bucket. Requires a
+   freshly started service AND short window/limit values via `compose.test.override.yml`.
+3. **`config-auth.test.js`** — mutates global domain state; clean-up in `afterEach`
+   restores it, but the admin API key to do so requires knowing who is the first user.
+
+All other tests (`happy-path`, `api-keys`) use `uniqueEmail()` for isolation
+and are safe against a warm stack.
+
+#### E1 — Root `package.json` (new file)
+
+```json
+{
+  "name": "microshort-integration-tests",
+  "version": "1.0.0",
+  "description": "Integration tests for the microshort stack",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test":          "vitest run",
+    "test:watch":    "vitest",
+    "test:m2":       "vitest run --reporter=verbose tests/integration/m2",
+    "test:rate":     "vitest run tests/integration/m2/rate-limiting.test.js",
+    "test:e2e":      "docker compose down -v && docker compose up -d --build --wait && npm test",
+    "test:e2e:rate": "docker compose -f compose.yml -f compose.test.override.yml down -v && docker compose -f compose.yml -f compose.test.override.yml up -d --build --wait && npm run test:rate"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.3"
+  }
+}
+```
+
+`npm run test:e2e` is the canonical M2 acceptance command:
+1. `docker compose down -v` — destroys volumes for a clean-state DB.
+2. `docker compose up -d --build --wait` — rebuilds all images and blocks until
+   every healthcheck passes (`--wait` requires Docker Compose ≥ 2.17, which the
+   existing `compose.yml` healthchecks already imply).
+3. `npm test` — runs vitest against the live stack (rate-limiting tests excluded).
+
+`npm test` alone is the fast path for developers iterating on idempotent tests
+(key hashing, revocation, happy-path) against an already-running stack.
+
+#### E2 — Root `vitest.config.js` (new file)
+
+```js
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    include: ['tests/integration/**/*.test.js'],
+    exclude: ['tests/integration/m2/rate-limiting.test.js'],  // run separately via test:e2e:rate
+    globalSetup: 'tests/integration/setup.js',
+    testTimeout: 10_000,
+    hookTimeout: 30_000,
+    pool: 'forks',  // each test file in its own process; avoids shared module state
+  },
+});
+```
+
+Rate-limiting tests are excluded from the default run because they exhaust the
+IP-based rate-limit bucket for the entire test session. They are opt-in via
+`npm run test:rate` / `npm run test:e2e:rate`.
+
+#### E3 — `tests/integration/setup.js` (new file)
+
+Global setup that polls every `/health` endpoint before any test runs. Gives a
+clear error ("Stack not healthy — is compose running?") instead of cascading
+connection failures.
+
+```js
+const HEALTH_URLS = [
+  'http://localhost:3000/health',  // config-service
+  'http://localhost:3001/health',  // auth-service
+  'http://localhost:3002/health',  // url-service
+  'http://localhost:8080/health',  // redirect-service
+  'http://localhost:3003/health',  // admin-service
+];
+
+export async function setup() {
+  const deadline = Date.now() + 60_000;
+  for (const url of HEALTH_URLS) {
+    while (Date.now() < deadline) {
+      try {
+        if ((await fetch(url, { signal: AbortSignal.timeout(2000) })).ok) break;
+      } catch { /* not yet */ }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`Stack not healthy after 60 s — is compose running? (${url})`);
+    }
+  }
+}
+```
+
+#### E4 — `tests/integration/helpers.js` (new file)
+
+Shared utilities used across test files. Uses `fetch` (Node 26 built-in) — no
+HTTP client dependency.
+
+```js
+export const BASE = {
+  config:   'http://localhost:3000',
+  auth:     'http://localhost:3001',
+  urls:     'http://localhost:3002',
+  redirect: 'http://localhost:8080',
+  admin:    'http://localhost:3003',
+};
+
+// Unique email prevents cross-test state collisions on a warm stack
+export const uniqueEmail = (label = 'user') =>
+  `test-${label}-${Date.now()}-${Math.random().toString(36).slice(2)}@test.local`;
+
+export async function register(email, password = 'Test-pass-123!') {
+  const res = await fetch(`${BASE.auth}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  return { status: res.status, ...(await res.json()) };
+}
+
+export async function createApiKey(token, name = 'test-key') {
+  const res = await fetch(`${BASE.auth}/auth/api-keys`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name }),
+  });
+  return { status: res.status, ...(await res.json()) };
+}
+
+export async function createShortUrl(apiKey, url) {
+  const res = await fetch(`${BASE.urls}/urls`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+    body: JSON.stringify({ url }),
+  });
+  return { status: res.status, ...(await res.json()) };
+}
+```
+
+#### E5 — Test files and assertions
+
+Five test files cover the full M2 acceptance surface. Each table row maps
+directly to a §5 DoD criterion or to a verification step in §2.
+
+---
+
+**`tests/integration/happy-path.test.js`** — regression: full M2 flow still
+works (safe against warm stack).
+
+| Test | Asserts |
+|------|---------|
+| register | 201; `token` in response |
+| create API key | 201; `apiKey` starts with `msh_` |
+| shorten a URL | 201; `shortUrl` and `slug` present |
+| follow redirect | 301 `Location` = original long URL |
+| list own URLs | 200; created slug present |
+
+```js
+// redirect-service currently returns 301 — changes to 302 in M3
+const res = await fetch(`${BASE.redirect}/${slug}`, { redirect: 'manual' });
+expect(res.status).toBe(301);
+expect(res.headers.get('location')).toBe('https://example.com');
+```
+
+---
+
+**`tests/integration/m2/api-keys.test.js`** — safe against warm stack (unique
+emails per test block).
+
+| Test | Asserts |
+|------|---------|
+| key returned once | `apiKey` in create response starts with `msh_` |
+| key not in listing | `GET /auth/api-keys` items have no `key`/`apiKey` field |
+| valid key validates | `POST /auth/validate` → `{ valid: true, isAdmin, role }` |
+| corrupted key rejected | mutate one char → 401 |
+| revoke then validate | 200 before revoke, 401 after |
+| double-revoke | second revoke → 404 |
+| revoked key hidden | absent from `GET /auth/api-keys` |
+
+---
+
+**`tests/integration/m2/roles.test.js`** — requires fresh DB; run via
+`npm run test:e2e`.
+
+> **Fresh DB required.** The first-registrant-is-admin invariant only holds
+> against an empty `users` table. Against a warm stack this test will fail if
+> any user has already registered.
+
+| Test | Asserts |
+|------|---------|
+| first user is admin | `POST /auth/validate` → `{ isAdmin: true, role: 'admin' }` |
+| second user is regular | `POST /auth/validate` → `{ isAdmin: false, role: 'user' }` |
+| non-admin key blocked | `GET /admin/users` → 403 |
+| admin key allowed | `GET /admin/users` → 200 |
+| admin dashboard | `GET /admin/dashboard` with admin key → 200 |
+
+---
+
+**`tests/integration/m2/config-auth.test.js`** — mutates global state; run via
+`npm run test:e2e` (needs admin API key from fresh DB).
+
+| Test | Asserts |
+|------|---------|
+| PUT without token | `PUT /config/domain` (no header) → 401 |
+| PUT with wrong token | same with `X-Service-Token: wrong` → 401 |
+| admin key via admin-service | `PUT /admin/config` (admin API key) → 200; `GET /config/domain` reflects new value |
+| domain restored | `afterEach` restores original domain so subsequent tests see consistent state |
+
+---
+
+**`tests/integration/m2/rate-limiting.test.js`** — requires
+`compose.test.override.yml` with short limits; run via `npm run test:e2e:rate`.
+
+Rate-limiting tests are excluded from the default vitest run (see E2). They
+require a fresh service AND shortened windows so the window can expire within
+the test itself to verify recovery.
+
+`compose.test.override.yml` (new file at repo root):
+```yaml
+# Compose override for rate-limit integration tests — short windows so tests
+# can assert both 429 and recovery without waiting 15+ minutes.
+services:
+  auth-service:
+    environment:
+      LOGIN_RATE_LIMIT_MAX: 3
+      LOGIN_RATE_LIMIT_WINDOW_MS: 5000     # 5-second window
+  url-service:
+    environment:
+      URL_RATE_LIMIT_MAX: 5
+      URL_RATE_LIMIT_WINDOW_MS: 5000
+```
+
+| Test | Asserts |
+|------|---------|
+| auth limiter triggers | 4th POST `/auth/login` → 429 (limit = 3) |
+| draft-6 headers on 429 | `RateLimit-Limit: 3`, `RateLimit-Remaining: 0`, `RateLimit-Reset` present |
+| window resets | after 5 s: next POST `/auth/login` → 200 |
+| URL creation limiter | 6th POST `/urls` → 429 (limit = 5) |
+
+#### E6 — CI integration
+
+New file `.github/workflows/integration.yml` — runs on any change to services,
+tests, or compose files:
+
+```yaml
+name: Integration Tests
+
+on:
+  push:
+    paths: ['services/**', 'tests/**', 'compose.yml', 'package.json']
+    branches: [main]
+  pull_request:
+    paths: ['services/**', 'tests/**', 'compose.yml', 'package.json']
+
+jobs:
+  integration:
+    name: Integration test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Start stack
+        run: docker compose up -d --build --wait
+      - name: Run integration tests
+        run: npm test
+      - name: Print service logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+```
+
+Rate-limiting tests are intentionally excluded from CI (they're opt-in locally
+via `npm run test:e2e:rate`). The default CI job exercises the full M2
+acceptance surface except rate limits.
+
+---
+
 ## 3. File-change summary
 
 | File | Workstream | Change |
@@ -602,6 +910,17 @@ comment in the code is worth leaving.
 | `.env` | C | Add `CONFIG_WRITE_TOKEN` |
 | `compose.yml` | C | Add `CONFIG_WRITE_TOKEN` to config-service + admin-service |
 | `compose-simple.yml` | C | Same as above |
+| `package.json` (root) | E | NEW: vitest `^3.2.3` devDep; `test`, `test:m2`, `test:e2e`, `test:rate`, `test:e2e:rate` scripts |
+| `vitest.config.js` (root) | E | NEW: include `tests/integration/**`, exclude rate-limiting, globalSetup, pool=forks |
+| `tests/integration/setup.js` | E | NEW: global setup — polls all `/health` endpoints with 60 s deadline |
+| `tests/integration/helpers.js` | E | NEW: `BASE` URLs, `uniqueEmail()`, `register()`, `createApiKey()`, `createShortUrl()` |
+| `tests/integration/happy-path.test.js` | E | NEW: register → API key → shorten → 301 redirect → list URLs |
+| `tests/integration/m2/api-keys.test.js` | E | NEW: hash transparency, revocation, double-revoke, listing hides key value |
+| `tests/integration/m2/roles.test.js` | E | NEW: first-user-is-admin, second-user-is-not, admin endpoint 403/200 (requires fresh DB) |
+| `tests/integration/m2/config-auth.test.js` | E | NEW: PUT /config/domain 401 (no/wrong token), 200 via admin-service (requires fresh DB) |
+| `tests/integration/m2/rate-limiting.test.js` | E | NEW: 429 + draft-6 headers + window recovery; excluded from default run |
+| `compose.test.override.yml` | E | NEW: `LOGIN_RATE_LIMIT_MAX=3 / WINDOW=5000`, `URL_RATE_LIMIT_MAX=5 / WINDOW=5000` |
+| `.github/workflows/integration.yml` | E | NEW: CI job — `npm ci` → compose up `--wait` → `npm test` → compose down |
 
 ---
 
@@ -620,8 +939,10 @@ Recommended order to keep each commit buildable and the git history readable:
 5. **admin-service** — `isAdmin` guard, config-PUT token forwarding.
 6. **config-service** — `server.ts` token check, test updates, Swagger docs.
 7. **compose / `.env`** — `CONFIG_WRITE_TOKEN` env vars.
-
-Full-stack smoke test after step 7 before tagging M2 complete.
+8. **Integration tests** — root `package.json`, `vitest.config.js`,
+   `tests/integration/` tree, `compose.test.override.yml`,
+   `.github/workflows/integration.yml`. Run `npm run test:e2e` to confirm all
+   acceptance criteria pass before tagging M2 complete.
 
 ---
 
@@ -653,6 +974,10 @@ Full-stack smoke test after step 7 before tagging M2 complete.
 - [ ] **Full stack** — `docker compose up -d --build` (after `down -v`) brings
   all services healthy; the happy path (register → API key → shorten → redirect
   → admin dashboard) works end-to-end.
+- [ ] **Integration tests** — `npm run test:e2e` from the repo root completes
+  with all tests passing. `npm run test:e2e:rate` (with `compose.test.override.yml`)
+  passes the rate-limiting suite. `npm run test:m2` passes against the running
+  stack for fast re-verification during development.
 
 ---
 
@@ -666,7 +991,7 @@ Full-stack smoke test after step 7 before tagging M2 complete.
 | Rate limiter bypassed by horizontal scaling (each replica has its own counter). | Intentional — same teaching arc as per-instance redirect cache. Resolved in M4 with Redis store. |
 | `constant-time` comparison not used for the service token check. | `timing-safe-equal` from Node `crypto` is the hardening fix. Note in code; M5 is the right milestone to address it alongside the full secrets story. |
 | `express-rate-limit@8.x` `limit` option vs. older `max`. | Use `limit` (not `max`) to avoid the deprecation warning. Verified against current v8 docs. |
-| Existing running databases after schema change. | Document `docker compose down -v` requirement prominently in commit message and `02-migration.sql` header. |
+| Existing running databases after schema change. | Document `docker compose down -v` requirement prominently in the commit message and the NOTE comment at the top of `01-schema.sql`. |
 
 ---
 
