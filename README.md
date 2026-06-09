@@ -2,6 +2,11 @@
 
 A lightweight, containerized URL shortener platform built using modern microservices.
 
+> **Project status: in active development (teaching prototype).** Not everything
+> described here is implemented yet, and some implemented parts are stubs. For the
+> authoritative picture see [CODE_REVIEW.md](./CODE_REVIEW.md) (current state and
+> known issues) and [PLANNING.md](./PLANNING.md) (roadmap and design decisions).
+
 ## Project Overview
 
 The **microshort** system provides basic URL shortening capabilities as a modular, extensible platform. It includes services for URL creation, redirection, analytics, authentication, administration, and configuration management.
@@ -18,52 +23,48 @@ The **microshort** system provides basic URL shortening capabilities as a modula
 ## Microservices Architecture
 
 ```mermaid
----
-config:
-  layout: fixed
----
 flowchart TD
- subgraph subGraph0["External Users"]
+  subgraph subGraph0["External Users"]
     direction LR
-        User["User (API Client)"]
-        Visitor["Visitor (Browser)"]
-        Admin["Administrator"]
+    User["User (API Client)"]
+    Visitor["Visitor (Browser)"]
+    Admin["Administrator"]
   end
- subgraph subGraph1["Entrypoints & UI"]
-        RedirectService["Redirect Service (Node.js)"]
-        AdminUI["Admin UI (VanJS + htm)"]
+  subgraph subGraph1["Entrypoints & UI"]
+    RedirectService["Redirect Service (Node.js)"]
+    AdminUI["Admin UI (VanJS + htm)"]
   end
- subgraph subGraph2["Core Microservices"]
-        AuthService["Auth Service (Node.js)"]
-        URLService["URL Service (Node.js)"]
-        AnalyticsService["Analytics Service (Node.js)"]
-        AdminService["Admin Service (Node.js)"]
-        ConfigService["Config Service (Node.js/TS)"]
+  subgraph subGraph2["Core Microservices"]
+    AuthService["Auth Service (Node.js)"]
+    URLService["URL Service (Node.js)"]
+    AnalyticsService["Analytics Service (Java) — planned"]
+    AdminService["Admin Service (Node.js)"]
+    ConfigService["Config Service (Node.js / TS)"]
   end
- subgraph subGraph3["Data Stores & Caches"]
-        PostgresDB[("PostgreSQL")]
-        MySQLDB[("MySQL")]
-        ClickHouseDB[("ClickHouse")]
-        Cache[("In-Memory Cache")]
+  subgraph subGraph3["Data Stores & Caches"]
+    PostgresDB[("PostgreSQL")]
+    MySQLDB[("MySQL")]
+    ClickHouseDB[("ClickHouse — planned")]
+    Cache[("In-Memory Cache")]
   end
-    Visitor -- 1: GET /{short_slug} --> RedirectService
-    RedirectService -- 2: Get Long URL --> URLService
-    RedirectService -- Caches URL --> Cache
-    RedirectService -- 3: Log Click --> AnalyticsService
-    RedirectService -- 4: HTTP 301 Redirect --> Visitor
-    User -- Register / Login --> AuthService
-    User -- POST /urls (API Key) --> URLService
-    URLService -- Validate API Key --> AuthService
-    Admin -- Access Dashboard --> AdminUI
-    AdminUI -- REST API Calls --> AdminService
-    AuthService --- PostgresDB
-    URLService --- MySQLDB
-    AnalyticsService --- ClickHouseDB
-    AdminService -- Aggregates Data --> URLService & AuthService & AnalyticsService
-    URLService -- Reads Config --> ConfigService
-    AuthService -- Reads Config --> ConfigService
-    AdminService -- Reads Config --> ConfigService
-    RedirectService -- Reads Config --> ConfigService
+  Visitor -->|"1. GET /slug"| RedirectService
+  RedirectService -->|"2. get long URL"| URLService
+  RedirectService -->|"caches URL"| Cache
+  RedirectService -->|"3. log click"| AnalyticsService
+  RedirectService -->|"4. HTTP 302 redirect"| Visitor
+  User -->|"register / login"| AuthService
+  User -->|"POST /urls (API key)"| URLService
+  URLService -->|"validate API key"| AuthService
+  Admin -->|"access dashboard"| AdminUI
+  AdminUI -->|"REST API calls"| AdminService
+  AuthService --- PostgresDB
+  URLService --- MySQLDB
+  AnalyticsService --- ClickHouseDB
+  AdminService -->|"aggregates data"| URLService & AuthService & AnalyticsService
+  URLService -->|"reads config"| ConfigService
+  AuthService -->|"reads config"| ConfigService
+  AdminService -->|"reads config"| ConfigService
+  RedirectService -->|"reads config"| ConfigService
 ```
 
 | Service           | Language             | Description                                                                                      |
@@ -72,7 +73,7 @@ flowchart TD
 | auth-service      | Node.js              | User authentication and API key management. PostgreSQL storage with JWT tokens.                  |
 | url-service       | Node.js              | Handles URL shortening logic, slug generation, and storage in MySQL.                             |
 | redirect-service  | Node.js              | High-performance redirect handler with caching. Public-facing service for short URLs.            |
-| analytics-service | Java                 | Collects and processes click logs. Stores data in MongoDB and provides aggregated statistics.    |
+| analytics-service | Java                 | **Planned** (see PLANNING.md §6). Collects click events from the redirect service and stores them in ClickHouse (columnar/OLAP); serves aggregated statistics to the admin service. |
 | admin-service     | Node.js              | Administrative API aggregating data from all services. Ready for web UI integration.             |
 | admin-ui          | VanJS + htm          | Web dashboard for system administration. Zero-build-tool approach with modern reactive UI.       |
 
@@ -82,9 +83,9 @@ flowchart TD
 2. The user submits a long URL to `url-service` and gets back a short URL, such as `http://localhost:8080/abc123`
 3. A visitor accesses the short URL via `redirect-service`, which:
    - Queries `url-service` for the long URL (with caching)
-   - Returns a 301 redirect to the destination
+   - Returns a redirect to the destination (currently `301`; **planned change to `302`** so every visit is counted — see PLANNING.md §6.1)
    - Logs the visit for analytics
-4. The redirect is logged by `analytics-service` (future)
+4. The redirect is recorded by `analytics-service` (**planned**: Java + ClickHouse, see PLANNING.md §6)
 5. Admins use `admin-service` to monitor the system:
    - View dashboard statistics
    - Manage users and URLs

@@ -15,8 +15,8 @@ High-performance redirect service for the microshort platform. This is the publi
 1. Receives requests like `http://sho.rt/abc123`
 2. Extracts slug (`abc123`) from URL path
 3. Queries url-service to get the long URL (with caching)
-4. Returns 301 redirect to the long URL
-5. Logs the redirect for analytics
+4. Returns a redirect to the long URL (currently `301`; planned change to `302` — see PLANNING.md §6.1)
+5. Logs the redirect for analytics (currently a stub; planned to emit events to the Java analytics-service — see PLANNING.md §6)
 
 ## Endpoints
 
@@ -25,7 +25,7 @@ Shows a simple home page with service info.
 
 ### `GET /:slug`
 Redirects to the long URL associated with the slug.
-- Returns 301 redirect if found
+- Returns a redirect if found (currently `301`; planned `302` — see PLANNING.md §6.1)
 - Returns 404 page if not found
 
 ### `GET /health`
