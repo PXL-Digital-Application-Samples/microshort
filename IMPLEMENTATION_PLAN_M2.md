@@ -948,33 +948,33 @@ Recommended order to keep each commit buildable and the git history readable:
 
 ## 5. Definition of done (M2 acceptance criteria)
 
-- [ ] **CR 2.1 / 4.1** — `user_id !== 1` / `userId !== 1` appears in zero
+- [x] **CR 2.1 / 4.1** — `user_id !== 1` / `userId !== 1` appears in zero
   files in the `services/` tree
   (`grep -rn 'userId.*!== 1\|user_id.*!== 1' services` returns nothing). The
   first registered user is admin; the second is not. All three services (auth,
   url, admin) determine "is admin" by checking `isAdmin`/`role` from
   `POST /auth/validate`.
-- [ ] **CR 2.2** — `SELECT key FROM api_keys` returns only 64-char hex strings
+- [x] **CR 2.2** — `SELECT key FROM api_keys` returns only 64-char hex strings
   (hashes). `grep -rn "'key'" services/auth-service/src/db.js` shows no direct
   key-column writes.
-- [ ] **CR 2.4** — `revokeApiKey` sets `revoked_at`; revoked keys return 401
+- [x] **CR 2.4** — `revokeApiKey` sets `revoked_at`; revoked keys return 401
   on validation; `getAuthStats` counts only `revoked_at IS NULL`.
-- [ ] **CR 2.3** — `validateApiKey` body contains no `await` on the
+- [x] **CR 2.3** — `validateApiKey` body contains no `await` on the
   `last_used_at` UPDATE (`grep -A5 'last_used_at' services/auth-service/src/db.js`
   shows a `.catch`-terminated, non-awaited promise).
-- [ ] **CR 2.7** — `curl -X PUT http://localhost:3000/config/domain -d
+- [x] **CR 2.7** — `curl -X PUT http://localhost:3000/config/domain -d
   '{"domain":"x"}'` returns 401. The same request with the correct
   `X-Service-Token` returns 200. `PUT /admin/config` (admin key) updates the
   domain correctly end-to-end.
-- [ ] **Rate limiting** — 11th login in 15 min returns 429; 31st URL creation
+- [x] **Rate limiting** — 11th login in 15 min returns 429; 31st URL creation
   in 1 min returns 429. Responses include `RateLimit-Limit`,
   `RateLimit-Remaining`, and `RateLimit-Reset` headers (draft-6 format).
-- [ ] **Tests** — `cd services/config-service && npx vitest run` passes; new
+- [x] **Tests** — `cd services/config-service && npx vitest run` passes; new
   401 tests are included; tree stays clean after the run.
-- [ ] **Full stack** — `docker compose up -d --build` (after `down -v`) brings
+- [x] **Full stack** — `docker compose up -d --build` (after `down -v`) brings
   all services healthy; the happy path (register → API key → shorten → redirect
   → admin dashboard) works end-to-end.
-- [ ] **Integration tests** — `npm run test:e2e` from the repo root completes
+- [x] **Integration tests** — `npm run test:e2e` from the repo root completes
   with all tests passing. `npm run test:e2e:rate` (with `compose.test.override.yml`)
   passes the rate-limiting suite. `npm run test:m2` passes against the running
   stack for fast re-verification during development.

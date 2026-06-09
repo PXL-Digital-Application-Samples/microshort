@@ -45,6 +45,19 @@ npx vitest run -t "<test name>"   # run one test by name
 
 CI (`.github/workflows/config-service.yml`) only covers `config-service` — it runs vitest, builds the Docker image, and pushes to GHCR. The other services have no automated tests or pipeline.
 
+## Running integration tests
+
+The root directory contains a suite of black-box integration tests that verify HTTP API behavior across the entire running stack.
+
+```bash
+npm install                     # install test dependencies (vitest) at root
+npm test                        # run default integration suite (excludes rate-limiting)
+npm run test:m2                 # run all M2 integration tests (excludes rate-limiting)
+npm run test:rate               # run rate-limiting tests specifically
+npm run test:e2e                # fresh stack spin up (down -v + up --wait) and run default suite
+npm run test:e2e:rate           # fresh stack spin up with rate-limiting overrides and run rate-limiting suite
+```
+
 ## Architecture
 
 Services and ports:

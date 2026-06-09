@@ -196,10 +196,27 @@ docker compose logs -f
 
 ## Testing
 
-* Unit and integration tests for individual services
-* Health check endpoints for container readiness
-* Full workflow examples: `full-example.sh` and `full-example.ps1`
-* Admin examples: `admin-example.sh` and `admin-example.ps1`
+This project contains both service-level tests and a root-level integration test suite.
+
+### Service-level Tests
+* **`config-service`**: Unit and integration tests using Vitest can be run under `services/config-service` via `npm test`.
+
+### Root-level Integration Tests
+The root directory hosts black-box integration tests that verify HTTP APIs against the live running container stack.
+To install test dependencies:
+```bash
+npm install
+```
+
+To run tests:
+* `npm test` — runs the default integration test suite (idempotent tests, excludes rate-limiting).
+* `npm run test:e2e` — tears down databases (`down -v`), rebuilds and runs the full stack, and executes the default integration tests.
+* `npm run test:e2e:rate` — runs rate-limiting tests with short-window environment overrides (`compose.test.override.yml`).
+
+### Manual Workflows
+* Health check endpoints on all services for container readiness.
+* Full workflow examples: `full-example.sh` and `full-example.ps1`.
+* Admin examples: `admin-example.sh` and `admin-example.ps1`.
 
 ## Possible Future Features
 

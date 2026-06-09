@@ -1,0 +1,11 @@
+# Compose override for rate-limit integration tests — short windows so tests
+# can assert both 429 and recovery without waiting 15+ minutes.
+services:
+  auth-service:
+    environment:
+      - LOGIN_RATE_LIMIT_MAX=3
+      - LOGIN_RATE_LIMIT_WINDOW_MS=5000     # 5-second window
+  url-service:
+    environment:
+      - URL_RATE_LIMIT_MAX=5
+      - URL_RATE_LIMIT_WINDOW_MS=5000
