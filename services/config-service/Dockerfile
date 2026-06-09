@@ -1,11 +1,11 @@
 # Stage 1: Build
-FROM node:24-slim AS builder
+FROM node:26-slim AS builder
 
 WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm config set strict-ssl false && npm ci
 
 # Copy source files
 COPY . .
@@ -17,7 +17,7 @@ RUN npx tsc
 RUN npx vitest run
 
 # Stage 2: Production image
-FROM node:24-slim
+FROM node:26-slim
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
 
-RUN npm install --omit=dev
+RUN npm config set strict-ssl false && npm ci --omit=dev
 
 # Copy config.json if it exists at build time
 COPY config.json ./config.json

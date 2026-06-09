@@ -1,12 +1,12 @@
-FROM node:24-slim
+FROM node:26-slim
 
 WORKDIR /app
 
-# Copy package.json (no package-lock.json needed)
-COPY package.json ./
+# Copy package files
+COPY package*.json ./
 
-# Install dependencies (will generate package-lock.json)
-RUN npm install --omit=dev
+# Install dependencies
+RUN npm config set strict-ssl false && npm ci --omit=dev
 
 # Copy application code
 COPY src/ ./src/

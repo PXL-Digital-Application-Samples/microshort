@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { createUser, findUserByEmail, createApiKey, validateApiKey, getUserApiKeys, revokeApiKey, getAllUsers, getAuthStats } from './db.js';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 const app = express();
@@ -48,7 +48,7 @@ app.post('/auth/register', async (req, res) => {
     const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, userId: user.id });
   } catch (err) {
-    if (err.message.includes('duplicate key')) {
+    if (err.code === '23505') {
       return res.status(409).json({ error: 'Email already exists' });
     }
     console.error('Registration error:', err);

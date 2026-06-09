@@ -1,0 +1,85 @@
+name: Build & Test JS Services
+
+on:
+  push:
+    paths:
+      - 'services/admin-service/**'
+      - 'services/admin-ui/**'
+      - 'services/auth-service/**'
+      - 'services/redirect-service/**'
+      - 'services/url-service/**'
+    branches: [ main ]
+  pull_request:
+    paths:
+      - 'services/admin-service/**'
+      - 'services/admin-ui/**'
+      - 'services/auth-service/**'
+      - 'services/redirect-service/**'
+      - 'services/url-service/**'
+
+jobs:
+  build:
+    name: Build ${{ matrix.service }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: admin-service
+            port: 3003
+            entry: src/index.js
+          - service: admin-ui
+            port: 3004
+            entry: server.js
+          - service: auth-service
+            port: 3001
+            entry: src/index.js
+          - service: redirect-service
+            port: 8080
+            entry: src/index.js
+          - service: url-service
+            port: 3002
+            entry: src/index.js
+
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check
+        run: node --check ${{ matrix.entry }}
+
+      - name: Build Docker image
+        run: docker build -t microshort-${{ matrix.service }}:ci .
+
+      - name: Smoke test /health
+        run: |
+          docker run -d --name svc -p 127.0.0.1:${{ matrix.port }}:${{ matrix.port }} microshort-${{ matrix.service }}:ci
+          HEALTHY=false
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:${{ matrix.port }}/health; then
+              HEALTHY=true
+              break
+            fi
+            sleep 1
+          done
+          docker stop svc
+          if [ "$HEALTHY" != "true" ]; then
+            echo "Health check failed after 15s"
+            exit 1
+          fi
+          echo "Health check passed"

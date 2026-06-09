@@ -8,7 +8,7 @@ import swaggerJsdoc from 'swagger-jsdoc';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const CONFIG_PATH = path.resolve(__dirname, '../config.json');
+const configPath = () => process.env.CONFIG_PATH || path.resolve(__dirname, '../config.json');
 const CACHE_TTL_MS = 60_000;
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -24,13 +24,13 @@ let cacheTimestamp = 0;
 
 // Read config from disk
 async function loadConfig(): Promise<Config> {
-  const data = await fs.readFile(CONFIG_PATH, 'utf-8');
+  const data = await fs.readFile(configPath(), 'utf-8');
   return JSON.parse(data);
 }
 
 // Save config to disk and update cache
 async function saveConfig(newConfig: Config): Promise<void> {
-  await fs.writeFile(CONFIG_PATH, JSON.stringify(newConfig, null, 2), 'utf-8');
+  await fs.writeFile(configPath(), JSON.stringify(newConfig, null, 2), 'utf-8');
   cachedConfig = newConfig;
   cacheTimestamp = Date.now();
 }
@@ -145,10 +145,6 @@ const swaggerSpec = swaggerJsdoc({
 // Serve OpenAPI docs at /docs
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-// Start HTTP server
-app.listen(PORT, () => {
-  console.log(`Config service running on port ${PORT}`);
-});
+export function __resetConfigCache() { cachedConfig = null; cacheTimestamp = 0; }
 
-// This allows for importing the app in test files without starting the server
-export default app; // Export the app for testing purposes
+export default app;

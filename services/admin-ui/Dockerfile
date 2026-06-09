@@ -1,12 +1,12 @@
-FROM node:24-slim
+FROM node:26-slim
 
 WORKDIR /app
 
-# Copy package.json
-COPY package.json ./
+# Copy package files
+COPY package*.json ./
 
 # Install dependencies
-RUN npm install --omit=dev
+RUN npm config set strict-ssl false && npm ci --omit=dev
 
 # Copy all UI files
 COPY . .

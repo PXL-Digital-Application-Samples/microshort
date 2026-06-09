@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import fetch from 'node-fetch';
 
 const app = express();
 const PORT = process.env.PORT || 3003;
@@ -23,15 +22,16 @@ async function validateAdminKey(req, res, next) {
     const response = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey })
+      body: JSON.stringify({ apiKey }),
+      signal: AbortSignal.timeout(2000)
     });
-    
+
     if (!response.ok) {
       return res.status(401).json({ error: 'Invalid API key' });
     }
-    
+
     const data = await response.json();
-    
+
     // Simple admin check - user ID 1 is admin
     if (data.userId !== 1) {
       return res.status(403).json({ error: 'Admin access required' });
@@ -56,10 +56,12 @@ app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
     // Fetch stats from both services in parallel
     const [authStatsRes, urlStatsRes] = await Promise.all([
       fetch(`${AUTH_SERVICE_URL}/admin/stats`, {
-        headers: { 'X-API-Key': req.headers['x-api-key'] }
+        headers: { 'X-API-Key': req.headers['x-api-key'] },
+        signal: AbortSignal.timeout(2000)
       }),
       fetch(`${URL_SERVICE_URL}/admin/stats`, {
-        headers: { 'X-API-Key': req.headers['x-api-key'] }
+        headers: { 'X-API-Key': req.headers['x-api-key'] },
+        signal: AbortSignal.timeout(2000)
       })
     ]);
     
@@ -93,7 +95,8 @@ app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
 app.get('/admin/users', validateAdminKey, async (req, res) => {
   try {
     const response = await fetch(`${AUTH_SERVICE_URL}/admin/users`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'] }
+      headers: { 'X-API-Key': req.headers['x-api-key'] },
+      signal: AbortSignal.timeout(2000)
     });
     
     if (!response.ok) {
@@ -112,13 +115,14 @@ app.get('/admin/users', validateAdminKey, async (req, res) => {
 app.get('/admin/urls', validateAdminKey, async (req, res) => {
   try {
     const response = await fetch(`${URL_SERVICE_URL}/admin/urls`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'] }
+      headers: { 'X-API-Key': req.headers['x-api-key'] },
+      signal: AbortSignal.timeout(2000)
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to fetch URLs');
     }
-    
+
     const data = await response.json();
     res.json(data);
   } catch (err) {
@@ -158,7 +162,8 @@ app.put('/admin/config', validateAdminKey, async (req, res) => {
     const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ domain })
+      body: JSON.stringify({ domain }),
+      signal: AbortSignal.timeout(2000)
     });
     
     if (!response.ok) {
@@ -176,8 +181,8 @@ app.put('/admin/config', validateAdminKey, async (req, res) => {
 // Get current configuration
 app.get('/admin/config', validateAdminKey, async (req, res) => {
   try {
-    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`);
-    
+    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, { signal: AbortSignal.timeout(2000) });
+
     if (!response.ok) {
       throw new Error('Failed to fetch config');
     }
@@ -202,7 +207,8 @@ app.get('/admin/search/urls', validateAdminKey, async (req, res) => {
     // Get all URLs and filter client-side
     // In production, you'd want a proper search endpoint
     const response = await fetch(`${URL_SERVICE_URL}/admin/urls`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'] }
+      headers: { 'X-API-Key': req.headers['x-api-key'] },
+      signal: AbortSignal.timeout(2000)
     });
     
     if (!response.ok) {
@@ -234,7 +240,7 @@ app.get('/admin/health/services', validateAdminKey, async (req, res) => {
     const healthChecks = await Promise.all(
       services.map(async (service) => {
         try {
-          const response = await fetch(service.url, { timeout: 2000 });
+          const response = await fetch(service.url, { signal: AbortSignal.timeout(2000) });
           return {
             service: service.name,
             status: response.ok ? 'healthy' : 'unhealthy',
