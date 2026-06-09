@@ -1,13 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
-import express from 'express';
+import os from 'os';
 import fs from 'fs/promises';
 import path from 'path';
+import app, { __resetConfigCache } from './server';
 
-// Import your actual app file logic as a function if modularized.
-// Or recreate here minimally for testing if not.
+let tmp: string;
 
-import app from './server'; // Assuming you modularize the Express app into server.ts
+beforeEach(async () => {
+  tmp = path.join(os.tmpdir(), `cfg-${Date.now()}-${Math.random()}.json`);
+  await fs.writeFile(tmp, JSON.stringify({ domain: 'https://fixture.test' }));
+  process.env.CONFIG_PATH = tmp;
+  __resetConfigCache();
+});
+
+afterEach(async () => {
+  delete process.env.CONFIG_PATH;
+  await fs.rm(tmp, { force: true });
+});
 
 describe('ConfigService', () => {
   it('GET /config/domain should return domain', async () => {
