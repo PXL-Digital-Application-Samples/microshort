@@ -20,7 +20,7 @@ describe('M5 — Config-service: env-var driven domain', () => {
 });
 
 describe('M5 — Config-service: Ajv validation on PUT', () => {
-  const writeToken = process.env.CONFIG_WRITE_TOKEN;
+  const writeToken = process.env.CONFIG_WRITE_TOKEN || 'dev-config-token-change-in-production';
 
   it('rejects PUT with invalid domain format', async () => {
     const res = await fetch(`${CONFIG_URL}/config/domain`, {
