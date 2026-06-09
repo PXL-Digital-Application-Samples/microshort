@@ -2,7 +2,7 @@
 
 > Companion to [CODE_REVIEW.md](./CODE_REVIEW.md). This document sequences the
 > work needed to turn the current prototype into a coherent microservices teaching
-> platform. **M1 is complete** (2026-06-09); see milestone notes below.
+> platform. **M1, M2, and M3 are complete** (2026-06-09); see milestone notes below.
 
 ## 1. What this project is for
 
@@ -100,7 +100,7 @@ Notes:
 - Corporate SSL proxy requires `npm config set strict-ssl false` in Dockerfiles.
 - `bcryptjs` is a drop-in replacement for `bcrypt` with identical API.
 
-### M2 — Authentication & authorization maturity *(core teaching topic)*
+### M2 — Authentication & authorization maturity *(core teaching topic)* ✅ COMPLETE
 Goal: turn the placeholder auth into something worth teaching with.
 - Introduce a real **role** concept (e.g. `users.role` + a claim), replacing the
   hard-coded `user_id === 1` in all three services (CR 2.1).
@@ -115,7 +115,7 @@ Goal: turn the placeholder auth into something worth teaching with.
 - Add authentication to `PUT /config/domain` (CR 2.7).
 - Add rate limiting to `/auth/login` and URL creation.
 
-### M3 — Analytics-service (Java + ClickHouse) — **build per §6**
+### M3 — Analytics-service (Java + ClickHouse) — **build per §6** ✅ COMPLETE
 Goal: stand up the new service and rewire click tracking around it. The design is
 finalised in §6 (all decisions made); this milestone implements it.
 - Scaffold the Spring Boot 3.x / Java 21 / Maven service on port 3005, with

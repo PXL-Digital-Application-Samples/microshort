@@ -37,14 +37,14 @@ flowchart TD
   subgraph subGraph2["Core Microservices"]
     AuthService["Auth Service (Node.js)"]
     URLService["URL Service (Node.js)"]
-    AnalyticsService["Analytics Service (Java) — planned"]
+    AnalyticsService["Analytics Service (Java)"]
     AdminService["Admin Service (Node.js)"]
     ConfigService["Config Service (Node.js / TS)"]
   end
   subgraph subGraph3["Data Stores & Caches"]
     PostgresDB[("PostgreSQL")]
     MySQLDB[("MySQL")]
-    ClickHouseDB[("ClickHouse — planned")]
+    ClickHouseDB[("ClickHouse")]
     Cache[("In-Memory Cache")]
   end
   Visitor -->|"1. GET /slug"| RedirectService
@@ -73,7 +73,7 @@ flowchart TD
 | auth-service      | Node.js              | User authentication and API key management. PostgreSQL storage with JWT tokens.                  |
 | url-service       | Node.js              | Handles URL shortening logic, slug generation, and storage in MySQL.                             |
 | redirect-service  | Node.js              | High-performance redirect handler with caching. Public-facing service for short URLs.            |
-| analytics-service | Java                 | **Planned** (see PLANNING.md §6). Collects click events from the redirect service and stores them in ClickHouse (columnar/OLAP); serves aggregated statistics to the admin service. |
+| analytics-service | Java                 | Collects click events from the redirect service and stores them in ClickHouse (columnar/OLAP); serves aggregated statistics to the admin service and url-service. |
 | admin-service     | Node.js              | Administrative API aggregating data from all services. Ready for web UI integration.             |
 | admin-ui          | VanJS + htm          | Web dashboard for system administration. Zero-build-tool approach with modern reactive UI.       |
 
@@ -83,9 +83,9 @@ flowchart TD
 2. The user submits a long URL to `url-service` and gets back a short URL, such as `http://localhost:8080/abc123`
 3. A visitor accesses the short URL via `redirect-service`, which:
    - Queries `url-service` for the long URL (with caching)
-   - Returns a redirect to the destination (currently `301`; **planned change to `302`** so every visit is counted — see PLANNING.md §6.1)
+   - Returns a 302 redirect to the destination (so every visit is counted)
    - Logs the visit for analytics
-4. The redirect is recorded by `analytics-service` (**planned**: Java + ClickHouse, see PLANNING.md §6)
+4. The redirect is recorded by `analytics-service` (Java + ClickHouse)
 5. Admins use `admin-service` to monitor the system:
    - View dashboard statistics
    - Manage users and URLs

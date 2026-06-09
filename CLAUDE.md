@@ -67,9 +67,10 @@ Services and ports:
 | config-service | 3000 | Node/TypeScript | `config.json` file | Single source of shared config (the public `domain`). Serves Swagger docs at `/docs`. |
 | auth-service | 3001 | Node | PostgreSQL | User registration/login (JWT) and API-key issuance/validation. Keys are `msh_<nanoid>`. |
 | url-service | 3002 | Node | MySQL | Create/manage short URLs and slugs; the system of record for slug → long URL. |
-| redirect-service | 8080 | Node | in-memory cache only | Public-facing. Resolves slugs via url-service, caches them, returns 301. Stores nothing persistently. |
+| redirect-service | 8080 | Node | in-memory cache only | Public-facing. Resolves slugs via url-service, caches them, returns 302. Stores nothing persistently. |
 | admin-service | 3003 | Node | none | Aggregation API — pulls from auth/url/config over HTTP, holds no DB of its own. CORS-enabled. |
 | admin-ui | 3004 | VanJS + htm | none | Dashboard. **Zero build tools**: `server.js` is a static Express server; UI logic is hand-written ES modules in `app.js` + `components/`. |
+| analytics-service | 3005 | Java (Spring Boot) | ClickHouse | Ingests click events from redirect-service, aggregates and stores them, and serves stats to admin-service. |
 
 Key cross-service rules:
 
@@ -88,6 +89,5 @@ This is a teaching prototype under active development. Two docs are the source o
 
 ## Notes / gotchas
 
-- The **analytics-service** (referenced in the README, `architecture.mermaid`, the `url_analytics` table, and redirect-service's `logRedirect` stub) is **not yet implemented** — it's commented out in `compose.yml` with no `services/` directory. It is planned as **Java (Spring Boot) + ClickHouse** (PLANNING.md §6); ignore the older "Node.js"/"MongoDB" labels if you still find them anywhere.
 - Every service exposes `GET /health`; container healthchecks depend on it, so keep it cheap and dependency-free.
 - `example.http` / `example.ps1` files in each service, plus root `full-example.{sh,ps1}` and `admin-example.{sh,ps1}`, are the canonical request examples for manual end-to-end testing.
