@@ -130,11 +130,11 @@ Black-box tests against the live running stack. Require the full Docker stack to
 ```bash
 npm install           # install vitest at root
 npm test              # run default suite (excludes rate-limiting)
-npm run test:m2       # M2 tests (auth + rate-limiting happy path)
-npm run test:m3       # M3 tests (analytics)
-npm run test:m4       # M4 tests (observability, readiness, metrics)
-npm run test:m5       # M5 tests (config, secrets, validation)
-npm run test:m6       # M6 tests (admin UI, camelCase, search)
+npm run test:auth          # API keys, roles, config auth, rate-limit happy path
+npm run test:analytics     # click event ingestion and statistics
+npm run test:observability # readiness, Prometheus metrics, request-ID propagation, Redis cache
+npm run test:config        # config-service domain, Ajv validation, secrets/env validation
+npm run test:admin-ui      # admin-ui runtime config, vendored libs, camelCase consistency
 npm run test:e2e      # fresh stack (down -v → up --wait) then full suite
 npm run test:e2e:rate # fresh stack with rate-limit overrides then rate-limit suite
 ```

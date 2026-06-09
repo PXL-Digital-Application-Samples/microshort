@@ -60,7 +60,7 @@ npm run test:e2e   # fresh stack (down -v + up --wait) then full suite
 npm run test:e2e:rate  # fresh stack with rate-limit overrides then rate-limit suite
 ```
 
-Individual milestone suites: `test:m2`, `test:m3`, `test:m4`, `test:m5`, `test:m6`.
+Individual suites: `test:auth`, `test:analytics`, `test:observability`, `test:config`, `test:admin-ui`.
 
 ## Architecture
 
