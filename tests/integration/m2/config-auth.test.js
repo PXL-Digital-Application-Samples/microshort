@@ -1,7 +1,10 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { BASE, uniqueEmail, register, createApiKey } from '../helpers.js';
+import { describe, it, expect, afterEach, beforeAll } from 'vitest';
+import { BASE, uniqueEmail, register, createApiKey, resetDb } from '../helpers.js';
 
 describe('Config Authentication', () => {
+  beforeAll(() => {
+    resetDb();
+  });
   let originalDomain = 'http://localhost:3004';
 
   it('should protect domain config write operations', async () => {

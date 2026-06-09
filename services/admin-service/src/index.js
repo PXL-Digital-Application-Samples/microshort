@@ -7,6 +7,9 @@ const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:30
 const URL_SERVICE_URL = process.env.URL_SERVICE_URL || 'http://url-service:3002';
 const CONFIG_SERVICE_URL = process.env.CONFIG_SERVICE_URL || 'http://config-service:3000';
 
+const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:3005';
+const SERVICE_TOKEN         = process.env.SERVICE_TOKEN          || '';
+
 app.use(cors());
 app.use(express.json());
 
@@ -53,8 +56,7 @@ app.get('/health', (req, res) => {
 // Get dashboard overview
 app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
   try {
-    // Fetch stats from both services in parallel
-    const [authStatsRes, urlStatsRes] = await Promise.all([
+    const [authStatsRes, urlStatsRes, analyticsOverviewRes, analyticsTopRes] = await Promise.all([
       fetch(`${AUTH_SERVICE_URL}/admin/stats`, {
         headers: { 'X-API-Key': req.headers['x-api-key'] },
         signal: AbortSignal.timeout(2000)
@@ -62,27 +64,38 @@ app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
       fetch(`${URL_SERVICE_URL}/admin/stats`, {
         headers: { 'X-API-Key': req.headers['x-api-key'] },
         signal: AbortSignal.timeout(2000)
+      }),
+      fetch(`${ANALYTICS_SERVICE_URL}/stats/overview`, {
+        headers: { 'X-Service-Token': SERVICE_TOKEN },
+        signal: AbortSignal.timeout(2000)
+      }),
+      fetch(`${ANALYTICS_SERVICE_URL}/stats/top?limit=10`, {
+        headers: { 'X-Service-Token': SERVICE_TOKEN },
+        signal: AbortSignal.timeout(2000)
       })
     ]);
-    
-    if (!authStatsRes.ok || !urlStatsRes.ok) {
-      throw new Error('Failed to fetch stats');
+
+    if (!authStatsRes.ok || !urlStatsRes.ok || !analyticsOverviewRes.ok || !analyticsTopRes.ok) {
+      throw new Error('Failed to fetch stats from upstream services');
     }
-    
-    const authStats = await authStatsRes.json();
-    const urlStats = await urlStatsRes.json();
-    
+
+    const authStats        = await authStatsRes.json();
+    const urlStats         = await urlStatsRes.json();
+    const analyticsOverview = await analyticsOverviewRes.json();
+    const analyticsTop     = await analyticsTopRes.json();
+
     res.json({
       users: {
-        total: authStats.totalUsers,
+        total:        authStats.totalUsers,
         recentSignups: authStats.recentUsers,
         totalApiKeys: authStats.totalApiKeys
       },
       urls: {
-        total: urlStats.totalUrls,
-        totalClicks: urlStats.totalClicks,
-        recentUrls: urlStats.recentUrls,
-        topUrls: urlStats.topUrls
+        total:       urlStats.totalUrls,
+        recentUrls:  urlStats.recentUrls,
+        // Click metrics sourced from analytics-service (authoritative)
+        totalClicks: analyticsOverview.totalClicks,
+        topUrls:     analyticsTop.map(t => ({ slug: t.slug, clicks: t.totalClicks }))
       }
     });
   } catch (err) {
@@ -90,6 +103,7 @@ app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch dashboard data' });
   }
 });
+
 
 // List all users
 app.get('/admin/users', validateAdminKey, async (req, res) => {
@@ -235,9 +249,10 @@ app.get('/admin/search/urls', validateAdminKey, async (req, res) => {
 app.get('/admin/health/services', validateAdminKey, async (req, res) => {
   try {
     const services = [
-      { name: 'auth', url: `${AUTH_SERVICE_URL}/health` },
-      { name: 'url', url: `${URL_SERVICE_URL}/health` },
-      { name: 'config', url: `${CONFIG_SERVICE_URL}/health` }
+      { name: 'auth',      url: `${AUTH_SERVICE_URL}/health` },
+      { name: 'url',       url: `${URL_SERVICE_URL}/health` },
+      { name: 'config',    url: `${CONFIG_SERVICE_URL}/health` },
+      { name: 'analytics', url: `${ANALYTICS_SERVICE_URL}/actuator/health/liveness` }
     ];
     
     const healthChecks = await Promise.all(

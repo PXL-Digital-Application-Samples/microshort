@@ -40,9 +40,13 @@ services:
       - PORT=8080
       - URL_SERVICE_URL=http://url-service:3002
       - CONFIG_SERVICE_URL=http://config-service:3000
+      - ANALYTICS_SERVICE_URL=http://analytics-service:3005
+      - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
+      - IP_HASH_SALT=${IP_HASH_SALT:-dev-ip-hash-salt-change-in-production}
     depends_on:
       - url-service
       - config-service
+      - analytics-service
 
   # URL Service
   url-service:
@@ -58,6 +62,8 @@ services:
       - DB_PASSWORD=${URL_DB_PASSWORD:-urlpass}
       - AUTH_SERVICE_URL=http://auth-service:3001
       - CONFIG_SERVICE_URL=http://config-service:3000
+      - ANALYTICS_SERVICE_URL=http://analytics-service:3005
+      - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
     depends_on:
       - url-db
       - auth-service
@@ -75,6 +81,38 @@ services:
       - url-db-data:/var/lib/mysql
       - ./services/url-service/init:/docker-entrypoint-initdb.d
 
+  # Analytics Service
+  analytics-service:
+    build: ./services/analytics-service
+    ports:
+      - "3005:3005"
+    environment:
+      - PORT=3005
+      - CLICKHOUSE_URL=jdbc:clickhouse://clickhouse:8123/analytics
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
+    depends_on:
+      - clickhouse
+
+  # ClickHouse — columnar store for analytics-service
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3
+    environment:
+      - CLICKHOUSE_DB=analytics
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./services/analytics-service/clickhouse-init:/docker-entrypoint-initdb.d
+    ports:
+      - "8123:8123"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
 volumes:
   auth-db-data:
   url-db-data:
+  clickhouse-data:

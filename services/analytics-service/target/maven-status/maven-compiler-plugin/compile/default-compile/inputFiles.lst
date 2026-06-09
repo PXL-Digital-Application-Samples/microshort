@@ -1,0 +1,6 @@
+/home/tomc/github/microshort/services/analytics-service/src/main/java/be/pxl/microshort/analytics/AnalyticsApplication.java
+/home/tomc/github/microshort/services/analytics-service/src/main/java/be/pxl/microshort/analytics/config/ServiceTokenFilter.java
+/home/tomc/github/microshort/services/analytics-service/src/main/java/be/pxl/microshort/analytics/controller/EventController.java
+/home/tomc/github/microshort/services/analytics-service/src/main/java/be/pxl/microshort/analytics/controller/StatsController.java
+/home/tomc/github/microshort/services/analytics-service/src/main/java/be/pxl/microshort/analytics/model/ClickEvent.java
+/home/tomc/github/microshort/services/analytics-service/src/main/java/be/pxl/microshort/analytics/repository/ClickHouseRepository.java

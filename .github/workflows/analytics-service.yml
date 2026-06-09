@@ -1,0 +1,28 @@
+name: Analytics Service CI
+
+on:
+  push:
+    paths:
+      - 'services/analytics-service/**'
+      - '.github/workflows/analytics-service.yml'
+    branches: [main]
+  pull_request:
+    paths:
+      - 'services/analytics-service/**'
+
+jobs:
+  build:
+    name: Build and test analytics-service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+      - name: Run unit tests
+        working-directory: services/analytics-service
+        run: mvn -B verify --no-transfer-progress
+      - name: Build Docker image
+        run: docker build -t microshort-analytics:ci services/analytics-service

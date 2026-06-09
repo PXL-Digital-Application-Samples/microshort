@@ -1,6 +1,6 @@
 import mysql from 'mysql2/promise';
 
-const pool = mysql.createPool({
+export const pool = mysql.createPool({
   host: process.env.DB_HOST || 'url-db',
   port: process.env.DB_PORT || 3306,
   database: process.env.DB_NAME || 'urlshort',
@@ -54,11 +54,12 @@ export async function deleteUrl(urlId) {
   );
 }
 
-// Increment click count
-export async function incrementClicks(urlId) {
+// Updates the eventually-consistent click count cache. Called by the
+// scheduled analytics sync job, not on the request hot path.
+export async function updateClickCount(slug, count) {
   await pool.execute(
-    'UPDATE urls SET clicks = clicks + 1 WHERE id = ?',
-    [urlId]
+    'UPDATE urls SET clicks = ? WHERE slug = ?',
+    [count, slug]
   );
 }
 

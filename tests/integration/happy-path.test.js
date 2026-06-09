@@ -1,7 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { BASE, uniqueEmail, register, createApiKey, createShortUrl } from './helpers.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { BASE, uniqueEmail, register, createApiKey, createShortUrl, resetDb } from './helpers.js';
 
 describe('Happy Path', () => {
+  beforeAll(() => {
+    resetDb();
+  });
   it('should complete the registered user flow with custom URL and redirect', async () => {
     const email = uniqueEmail('happy');
     const regRes = await register(email);
@@ -19,8 +22,9 @@ describe('Happy Path', () => {
     expect(shortenRes.slug).toBeDefined();
 
     const redirectRes = await fetch(`${BASE.redirect}/${shortenRes.slug}`, { redirect: 'manual' });
-    expect(redirectRes.status).toBe(301);
+    expect(redirectRes.status).toBe(302);
     expect(redirectRes.headers.get('location')).toBe(url);
+    expect(redirectRes.headers.get('cache-control')).toBe('no-store');
 
     const listRes = await fetch(`${BASE.urls}/urls`, {
       headers: { 'x-api-key': keyRes.apiKey }

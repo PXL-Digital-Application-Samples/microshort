@@ -1,7 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { BASE, uniqueEmail, register, createApiKey } from '../helpers.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { BASE, uniqueEmail, register, createApiKey, resetDb } from '../helpers.js';
 
 describe('Roles', () => {
+  beforeAll(() => {
+    resetDb();
+  });
   it('should assign admin or user based on registration order', async () => {
     // This test assumes a fresh DB. The first registered user is admin.
     const firstRoleEmail = uniqueEmail('firstAdmin');

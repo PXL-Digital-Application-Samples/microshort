@@ -4,6 +4,7 @@ const HEALTH_URLS = [
   'http://localhost:3002/health',  // url-service
   'http://localhost:8080/health',  // redirect-service
   'http://localhost:3003/health',  // admin-service
+  'http://localhost:3005/actuator/health/liveness',  // analytics-service
 ];
 
 export async function setup() {

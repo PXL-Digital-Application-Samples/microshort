@@ -1,9 +1,21 @@
 import express from 'express';
+import { createHash } from 'crypto';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 const URL_SERVICE_URL = process.env.URL_SERVICE_URL || 'http://url-service:3002';
 const CONFIG_SERVICE_URL = process.env.CONFIG_SERVICE_URL || 'http://config-service:3000';
+
+const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:3005';
+const SERVICE_TOKEN         = process.env.SERVICE_TOKEN          || '';
+const IP_HASH_SALT          = process.env.IP_HASH_SALT           || 'dev-ip-hash-salt-change-in-production';
+const ANALYTICS_BATCH_SIZE  = parseInt(process.env.ANALYTICS_BATCH_SIZE  ?? '50');
+const ANALYTICS_FLUSH_MS    = parseInt(process.env.ANALYTICS_FLUSH_MS    ?? '5000');
+
+// Enable trust proxy so req.ip reflects the real client when behind a proxy (M4).
+// In bare Compose without a proxy, req.ip is the Docker bridge gateway; the
+// ip_hash mechanism is correct but all events will share the same hash.
+app.set('trust proxy', 1);
 
 // Simple in-memory cache for performance
 const cache = new Map();
@@ -46,6 +58,36 @@ async function getRedirectUrl(slug) {
     return null;
   }
 }
+
+function hashIp(ip) {
+  return createHash('sha256').update((ip || '0.0.0.0') + IP_HASH_SALT).digest('hex');
+}
+
+const eventBuffer = [];
+
+function bufferEvent(slug, userAgent, referer, ip) {
+  eventBuffer.push({
+    slug,
+    ts:        new Date().toISOString(),
+    referrer:  referer    || '',
+    userAgent: userAgent  || '',
+    ipHash:    hashIp(ip)
+  });
+  if (eventBuffer.length >= ANALYTICS_BATCH_SIZE) flushEvents();
+}
+
+function flushEvents() {
+  if (eventBuffer.length === 0) return;
+  const batch = eventBuffer.splice(0);
+  fetch(`${ANALYTICS_SERVICE_URL}/events:batch`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Service-Token': SERVICE_TOKEN },
+    body:    JSON.stringify(batch),
+    signal:  AbortSignal.timeout(5000)
+  }).catch(err => console.error('Analytics flush failed:', err));
+}
+
+setInterval(flushEvents, ANALYTICS_FLUSH_MS);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -115,19 +157,12 @@ app.get('/:slug', async (req, res) => {
   }
   
   // Log the redirect (async, don't wait)
-  logRedirect(slug, req.headers['user-agent'], req.headers['referer']).catch(err => 
-    console.error('Failed to log redirect:', err)
-  );
+  bufferEvent(slug, req.headers['user-agent'], req.headers['referer'], req.ip);
   
   // Perform redirect
-  res.redirect(301, redirectUrl);
+  res.set('Cache-Control', 'no-store');
+  res.redirect(302, redirectUrl);
 });
-
-// Log redirect for analytics (placeholder for now)
-async function logRedirect(slug, userAgent, referer) {
-  // In the future, this would send to analytics-service
-  console.log(`Redirect: ${slug} | UA: ${userAgent?.substring(0, 50)} | Ref: ${referer || 'direct'}`);
-}
 
 // Clear expired cache entries periodically
 setInterval(() => {

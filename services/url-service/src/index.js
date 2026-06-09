@@ -1,13 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, incrementClicks, getAllUrls, getUrlStats } from './db.js';
+import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, updateClickCount, getAllUrls, getUrlStats, pool } from './db.js';
 import { nanoid } from 'nanoid';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3001';
 const CONFIG_SERVICE_URL = process.env.CONFIG_SERVICE_URL || 'http://config-service:3000';
+
+const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:3005';
+const SERVICE_TOKEN         = process.env.SERVICE_TOKEN          || '';
+const CLICK_SYNC_INTERVAL_MS = parseInt(process.env.CLICK_SYNC_INTERVAL_MS ?? '60000');
 
 // Enable trust proxy for rate limiting if behind a reverse proxy
 app.set('trust proxy', 1);
@@ -141,10 +145,6 @@ app.get('/urls/:slug', async (req, res) => {
       return res.status(404).json({ error: 'URL not found' });
     }
     
-    // Increment click count asynchronously
-    incrementClicks(urlRecord.id).catch(err => 
-      console.error('Failed to increment clicks:', err)
-    );
     
     res.json({
       longUrl: urlRecord.long_url,
@@ -278,6 +278,29 @@ app.get('/admin/stats', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+async function syncClickCounts() {
+  try {
+    const [rows] = await pool.execute('SELECT slug FROM urls');
+    if (rows.length === 0) return;
+
+    const slugs = rows.map(r => r.slug).join(',');
+    const res = await fetch(
+      `${ANALYTICS_SERVICE_URL}/stats/counts?slugs=${encodeURIComponent(slugs)}`,
+      { headers: { 'X-Service-Token': SERVICE_TOKEN }, signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return;
+
+    const counts = await res.json(); // { slug: count, ... }
+    await Promise.all(
+      Object.entries(counts).map(([slug, count]) => updateClickCount(slug, count))
+    );
+  } catch (err) {
+    console.error('Click count sync failed:', err);
+  }
+}
+
+setInterval(syncClickCounts, CLICK_SYNC_INTERVAL_MS);
 
 app.listen(PORT, () => {
   console.log(`URL service running on port ${PORT}`);

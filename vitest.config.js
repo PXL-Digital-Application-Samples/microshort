@@ -10,5 +10,6 @@ export default defineConfig({
     testTimeout: 20_000, // increased timeout for sleep steps in rate-limiting
     hookTimeout: 30_000,
     pool: 'forks',  // each test file in its own process; avoids shared module state
+    fileParallelism: false,
   },
 });

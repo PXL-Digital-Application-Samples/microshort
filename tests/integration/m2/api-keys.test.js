@@ -1,7 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { BASE, uniqueEmail, register, createApiKey } from '../helpers.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { BASE, uniqueEmail, register, createApiKey, resetDb } from '../helpers.js';
 
 describe('API Keys', () => {
+  beforeAll(() => {
+    resetDb();
+  });
   it('should support create, hide, validate and revoke flow', async () => {
     const email = uniqueEmail('keytest');
     const regRes = await register(email);

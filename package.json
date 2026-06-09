@@ -8,6 +8,7 @@
     "test":          "vitest run",
     "test:watch":    "vitest",
     "test:m2":       "vitest run --reporter=verbose tests/integration/m2",
+    "test:m3":       "vitest run --reporter=verbose tests/integration/m3",
     "test:rate":     "vitest run tests/integration/m2/rate-limiting.test.js",
     "test:e2e":      "docker compose down -v && docker compose up -d --build --wait && npm test",
     "test:e2e:rate": "docker compose -f compose.yml -f compose.test.override.yml down -v && docker compose -f compose.yml -f compose.test.override.yml up -d --build --wait && npm run test:rate"
