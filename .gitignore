@@ -1,0 +1,14 @@
+# Secrets — never commit real credentials
+.env
+
+# Local development overrides
+.env.local
+.env.*.local
+
+# Build artifacts
+node_modules/
+dist/
+target/
+
+# OS noise
+.DS_Store
