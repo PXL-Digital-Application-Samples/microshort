@@ -296,25 +296,17 @@ and keep it consistent.
 
 ---
 
-## 3. PR sequencing
+## 3. Commit sequencing
 
-Three small, reviewable PRs in order:
+Landed as a single commit on main. The logical order of changes was:
 
-1. **PR-1 — config-service correctness (A + B) + F1.**
-   App/server split, hermetic tests, and the config-service workflow brought to
-   Node 24 / `npm ci`. Self-contained; unblocks the crash-on-boot.
-2. **PR-2 — code fixes + build reproducibility (D + E + C).**
-   Drop `node-fetch` and add `AbortSignal.timeout`; SQLSTATE duplicate-email
-   check; then generate/commit all lockfiles (now node-fetch-free) and switch
-   every Dockerfile to `npm ci`. **D, E, and C are kept in one PR on purpose:**
-   the lockfiles must reflect the node-fetch removal, so committing them in the
-   same change avoids an intermediate state where `package.json` and the
-   lockfile disagree. E (duplicate-email) is a small unrelated code fix that
-   rides along here.
-3. **PR-3 — services CI (F2).**
-   New matrix workflow (includes the `admin-ui` `/health` route). Depends on
-   PR-2 — lockfiles must exist for `npm ci`, and `node --check`/smoke steps
-   assume the node-fetch-free source.
+1. **Config-service correctness (A + B) + F1** — app/server split, hermetic
+   tests, CI workflow updated.
+2. **Code fixes + build reproducibility (D + E + C)** — drop `node-fetch`,
+   add `AbortSignal.timeout`, SQLSTATE duplicate-email, lockfiles generated
+   after node-fetch removal, all Dockerfiles switched to `npm ci`.
+3. **Services CI (F2)** — new matrix workflow, `admin-ui` `/health` route,
+   docs updated.
 
 ---
 
@@ -351,7 +343,7 @@ Three small, reviewable PRs in order:
 
 | Risk | Mitigation |
 | --- | --- |
-| Native `fetch` behaves subtly differently from node-fetch (error types, header casing). | Exercise redirect happy-path + admin dashboard after PR-2; the call sites use only `ok`/`status`/`headers.get`/`json()`, all stable. |
+| Native `fetch` behaves subtly differently from node-fetch (error types, header casing). | Exercise redirect happy-path + admin dashboard after the change; the call sites use only `ok`/`status`/`headers.get`/`json()`, all stable. |
 | `npm ci` fails because a generated lockfile is out of sync with `package.json`. | That's the intended gate. Regenerate with `npm install` after the node-fetch removal, before committing. |
 | config-service test cache leaks state between tests. | `__resetConfigCache()` in `beforeEach` + per-test temp fixture make each test independent. |
 | auth/url containers can't reach their DB in the CI smoke test. | `/health` is liveness-only and DB-independent; DB pools are lazy, so import + `/health` succeed without a database. |
