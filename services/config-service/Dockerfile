@@ -27,7 +27,4 @@ COPY --from=builder /app/package*.json ./
 
 RUN npm config set strict-ssl false && npm ci --omit=dev
 
-# Copy config.json if it exists at build time
-COPY config.json ./config.json
-
 CMD ["node", "dist/index.js"]

@@ -1,24 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
-import os from 'os';
-import fs from 'fs/promises';
-import path from 'path';
 import app, { __resetConfigCache } from './server';
 
-let tmp: string;
-
-beforeEach(async () => {
-  tmp = path.join(os.tmpdir(), `cfg-${Date.now()}-${Math.random()}.json`);
-  await fs.writeFile(tmp, JSON.stringify({ domain: 'https://fixture.test' }));
-  process.env.CONFIG_PATH = tmp;
-  process.env.CONFIG_WRITE_TOKEN = 'test-write-token';
+beforeEach(() => {
   __resetConfigCache();
-});
-
-afterEach(async () => {
-  delete process.env.CONFIG_PATH;
-  delete process.env.CONFIG_WRITE_TOKEN;
-  await fs.rm(tmp, { force: true });
 });
 
 describe('ConfigService', () => {

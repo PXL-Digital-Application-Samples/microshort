@@ -1,6 +1,5 @@
 // server.ts
 import express, { Request, Response } from 'express';
-import fs from 'fs/promises';
 import path from 'path';
 import bodyParser from 'body-parser';
 import swaggerUi from 'swagger-ui-express';
@@ -9,6 +8,10 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import promClient from 'prom-client';
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
+import configSchema from '../config.schema.json';
+import { cleanEnv, url, str } from 'envalid';
 
 export const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -31,9 +34,22 @@ const httpDuration = new promClient.Histogram({
 });
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const configPath = () => process.env.CONFIG_PATH || path.resolve(__dirname, '../config.json');
-const CACHE_TTL_MS = 60_000;
+const env = cleanEnv(process.env, {
+  DOMAIN:             url({ desc: 'Base URL for short links. Must be a valid URI.' }),
+  CONFIG_WRITE_TOKEN: str({ desc: 'Token required to accept PUT /config/domain' }),
+  PORT:               str({ default: '3000' }),
+  LOG_LEVEL:          str({ default: 'info' }),
+});
+
+const ajv = new Ajv();
+addFormats(ajv);
+const validateConfig = ajv.compile(configSchema);
+
+// In-memory config state. Seeded from env var at startup.
+// PUT /config/domain mutates this at runtime (ephemeral — resets on restart).
+let currentDomain = env.DOMAIN;
+
+const PORT = env.PORT;
 const isDev = process.env.NODE_ENV !== 'production';
 
 app.use(pinoHttp({
@@ -62,38 +78,6 @@ app.use((req, res, next) => {
   next();
 });
 
-type Config = {
-  domain: string;
-};
-
-// In-memory config cache
-let cachedConfig: Config | null = null;
-let cacheTimestamp = 0;
-
-// Read config from disk
-async function loadConfig(): Promise<Config> {
-  const data = await fs.readFile(configPath(), 'utf-8');
-  return JSON.parse(data);
-}
-
-// Save config to disk and update cache
-async function saveConfig(newConfig: Config): Promise<void> {
-  await fs.writeFile(configPath(), JSON.stringify(newConfig, null, 2), 'utf-8');
-  cachedConfig = newConfig;
-  cacheTimestamp = Date.now();
-}
-
-// Get config, using cache if valid
-async function getConfig(): Promise<Config> {
-  if (cachedConfig && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
-    return cachedConfig;
-  }
-  const config = await loadConfig();
-  cachedConfig = config;
-  cacheTimestamp = Date.now();
-  return config;
-}
-
 /**
  * @openapi
  * /config/domain:
@@ -110,14 +94,8 @@ async function getConfig(): Promise<Config> {
  *                 domain:
  *                   type: string
  */
-app.get('/config/domain', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const config = await getConfig();
-    res.json({ domain: config.domain });
-  } catch (err) {
-    (req as any).log.error({ err }, 'Failed to read config');
-    res.status(500).json({ error: 'Internal server error' });
-  }
+app.get('/config/domain', (req: Request, res: Response): void => {
+  res.json({ domain: currentDomain });
 });
 
 /**
@@ -151,27 +129,29 @@ app.get('/config/domain', async (req: Request, res: Response): Promise<void> => 
  *       401:
  *         description: Unauthorized
  */
-app.put('/config/domain', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const expected = process.env.CONFIG_WRITE_TOKEN;
-    if (!expected || req.headers['x-service-token'] !== expected) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-
-    const { domain } = req.body;
-    if (!domain || typeof domain !== 'string') {
-      res.status(400).json({ error: 'Invalid or missing domain' });
-      return;
-    }
-
-    const updatedConfig: Config = { domain };
-    await saveConfig(updatedConfig);
-    res.json({ message: 'Domain updated', domain });
-  } catch (err) {
-    (req as any).log.error({ err }, 'Failed to update config');
-    res.status(500).json({ error: 'Internal server error' });
+app.put('/config/domain', (req: Request, res: Response): void => {
+  const expected = env.CONFIG_WRITE_TOKEN;
+  if (!expected || req.headers['x-service-token'] !== expected) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
   }
+
+  const { domain } = req.body;
+  if (!validateConfig({ domain })) {
+    res.status(400).json({ error: 'Validation failed', details: validateConfig.errors });
+    return;
+  }
+
+  currentDomain = domain;
+  (req as any).log.warn(
+    { domain, note: 'ephemeral — will reset to DOMAIN env var on restart' },
+    'Domain updated in-memory'
+  );
+  res.json({
+    message: 'Domain updated',
+    domain,
+    warning: 'This change is ephemeral. Set DOMAIN env var to persist across restarts.'
+  });
 });
 
 /**
@@ -198,14 +178,8 @@ app.get('/health', (_req: Request, res: Response): void => {
  *       503:
  *         description: Service is unavailable
  */
-app.get('/ready', async (req: Request, res: Response): Promise<void> => {
-  try {
-    await loadConfig();
-    res.json({ status: 'ready' });
-  } catch (err) {
-    (req as any).log.error({ err }, 'Readiness check failed');
-    res.status(503).json({ status: 'unavailable', detail: (err as Error).message });
-  }
+app.get('/ready', (_req: Request, res: Response): void => {
+  res.json({ status: 'ready', domain: currentDomain });
 });
 
 // Metrics check
@@ -234,6 +208,6 @@ const swaggerSpec = swaggerJsdoc({
 // Serve OpenAPI docs at /docs
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-export function __resetConfigCache() { cachedConfig = null; cacheTimestamp = 0; }
+export function __resetConfigCache() { currentDomain = env.DOMAIN; }
 
 export default app;
