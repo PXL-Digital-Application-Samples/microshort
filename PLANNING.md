@@ -150,16 +150,18 @@ Goal: make the system measurable, and make stateful components survive scaling.
   (CR 4.3), short-lived response caching, and graceful degradation so one slow or
   down dependency doesn't fail the whole dashboard.
 
-### M5 — Configuration & secrets *(core teaching topic)*
+### M5 — Configuration & secrets *(core teaching topic)* ✅ COMPLETE
 Goal: make config and secrets a first-class, teachable concern.
-- Do not replace config-service's file-on-disk store with a backed store (a small DB, or external/orchestrator-provided config) so settings survive restarts and stay
-  consistent across replicas (CR §8.2, 6.2). Students may first observe the
-  file-store limitation, and need to fix this themselves.
-- Validate config against the existing `config.schema.json` at load and on PUT
-  (CR 7.2) - if this is still needed.
-- Remove committed secrets from `.env`; provide a `.env.example` with
-  placeholders and document a secret-injection story the (separately taught)
-  deployments can satisfy (CR 2.6).
+- Replace config-service's file-on-disk store with env-var driven config (`DOMAIN`
+  env var). config-service reads `DOMAIN` at startup (validated by envalid + Ajv);
+  `PUT /config/domain` updates in-memory only and is explicitly ephemeral. This is
+  the 12-factor approach: config comes from the environment, survives restarts, and
+  is consistent across replicas.
+- Validate `domain` against `config.schema.json` via Ajv v8 + ajv-formats on
+  startup and on every `PUT /config/domain` request (CR 7.2).
+- Remove committed secrets from `.env` (git-untracked); provide `.env.example`
+  with placeholders; switch true secrets in compose to `:?` form so missing vars
+  fail loudly; add `envalid` to every Node service for startup fail-fast (CR 2.6).
 
 ### M6 — Admin UI & API consistency
 Goal: keep the zero-build (VanJS + htm) UI, but make it work anywhere and have

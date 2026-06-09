@@ -93,3 +93,5 @@ This is a teaching prototype under active development. Two docs are the source o
 
 - Every service exposes `GET /health`; container healthchecks depend on it, so keep it cheap and dependency-free.
 - `example.http` / `example.ps1` files in each service, plus root `full-example.{sh,ps1}` and `admin-example.{sh,ps1}`, are the canonical request examples for manual end-to-end testing.
+- **Secrets are injected via `.env`** (Docker Compose dev) or your deployment platform's secret mechanism (K8s Secret, Swarm secret, Ansible Vault). The `.env.example` file is the authoritative list. Copy it to `.env` and fill in real values before running locally. The stack will not start without a populated `.env` (compose `:?` enforcement).
+- **config-service reads `DOMAIN` from the environment**, not from a file. `PUT /config/domain` changes the in-memory value only — the change resets on container restart. To persist a domain change across restarts, update `DOMAIN` in `.env` and restart config-service.
