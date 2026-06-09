@@ -1,17 +1,66 @@
 import express from 'express';
 import cors from 'cors';
+import pino from 'pino';
+import pinoHttp from 'pino-http';
+import { randomUUID } from 'crypto';
+import promClient from 'prom-client';
+
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+
+const servicePrefix = 'microshort_admin_';
+promClient.collectDefaultMetrics({ prefix: servicePrefix });
+
+// HTTP request counter
+const httpRequests = new promClient.Counter({
+  name: `${servicePrefix}http_requests_total`,
+  help: 'Total HTTP requests handled',
+  labelNames: ['method', 'route', 'status']
+});
+
+// HTTP request duration histogram
+const httpDuration = new promClient.Histogram({
+  name: `${servicePrefix}http_request_duration_seconds`,
+  help: 'HTTP request duration in seconds',
+  labelNames: ['method', 'route'],
+  buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1]
+});
 
 const app = express();
 const PORT = process.env.PORT || 3003;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3001';
 const URL_SERVICE_URL = process.env.URL_SERVICE_URL || 'http://url-service:3002';
 const CONFIG_SERVICE_URL = process.env.CONFIG_SERVICE_URL || 'http://config-service:3000';
-
 const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:3005';
 const SERVICE_TOKEN         = process.env.SERVICE_TOKEN          || '';
 
+app.set('trust proxy', 1);
+
+app.use(pinoHttp({
+  logger,
+  genReqId: req => req.headers['x-request-id'] ?? randomUUID(),
+  customSuccessMessage: (req, res) => `${req.method} ${req.url} → ${res.statusCode}`,
+  autoLogging: { ignore: req => req.url === '/health' || req.url === '/ready' || req.url === '/metrics' }
+}));
+
+app.use((req, res, next) => {
+  res.setHeader('X-Request-ID', req.id);
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
+
+app.use((req, res, next) => {
+  if (['/health', '/ready', '/metrics'].includes(req.path)) return next();
+
+  const end = httpDuration.startTimer({ method: req.method });
+  res.on('finish', () => {
+    const route = req.route?.path ?? 'unknown';
+    end({ route });
+    httpRequests.inc({ method: req.method, route, status: String(res.statusCode) });
+  });
+  next();
+});
 
 // Validate admin API key middleware
 async function validateAdminKey(req, res, next) {
@@ -24,7 +73,10 @@ async function validateAdminKey(req, res, next) {
   try {
     const response = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-request-id': req.id
+      },
       body: JSON.stringify({ apiKey }),
       signal: AbortSignal.timeout(2000)
     });
@@ -43,73 +95,111 @@ async function validateAdminKey(req, res, next) {
     req.admin = { id: data.userId, role: data.role };
     next();
   } catch (err) {
-    console.error('Admin auth validation error:', err);
+    req.log.error({ err }, 'Admin auth validation error');
     res.status(503).json({ error: 'Authentication service unavailable' });
   }
 }
 
-// Health check
+// Health check (liveness)
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-// Get dashboard overview
-app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
-  try {
-    const [authStatsRes, urlStatsRes, analyticsOverviewRes, analyticsTopRes] = await Promise.all([
-      fetch(`${AUTH_SERVICE_URL}/admin/stats`, {
-        headers: { 'X-API-Key': req.headers['x-api-key'] },
-        signal: AbortSignal.timeout(2000)
-      }),
-      fetch(`${URL_SERVICE_URL}/admin/stats`, {
-        headers: { 'X-API-Key': req.headers['x-api-key'] },
-        signal: AbortSignal.timeout(2000)
-      }),
-      fetch(`${ANALYTICS_SERVICE_URL}/stats/overview`, {
-        headers: { 'X-Service-Token': SERVICE_TOKEN },
-        signal: AbortSignal.timeout(2000)
-      }),
-      fetch(`${ANALYTICS_SERVICE_URL}/stats/top?limit=10`, {
-        headers: { 'X-Service-Token': SERVICE_TOKEN },
-        signal: AbortSignal.timeout(2000)
-      })
-    ]);
+// Readiness check
+app.get('/ready', (req, res) => res.json({ status: 'ready' }));
 
-    if (!authStatsRes.ok || !urlStatsRes.ok || !analyticsOverviewRes.ok || !analyticsTopRes.ok) {
-      throw new Error('Failed to fetch stats from upstream services');
-    }
-
-    const authStats        = await authStatsRes.json();
-    const urlStats         = await urlStatsRes.json();
-    const analyticsOverview = await analyticsOverviewRes.json();
-    const analyticsTop     = await analyticsTopRes.json();
-
-    res.json({
-      users: {
-        total:        authStats.totalUsers,
-        recentSignups: authStats.recentUsers,
-        totalApiKeys: authStats.totalApiKeys
-      },
-      urls: {
-        total:       urlStats.totalUrls,
-        recentUrls:  urlStats.recentUrls,
-        // Click metrics sourced from analytics-service (authoritative)
-        totalClicks: analyticsOverview.totalClicks,
-        topUrls:     analyticsTop.map(t => ({ slug: t.slug, clicks: t.totalClicks }))
-      }
-    });
-  } catch (err) {
-    console.error('Dashboard error:', err);
-    res.status(500).json({ error: 'Failed to fetch dashboard data' });
-  }
+// Metrics
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', promClient.register.contentType);
+  res.end(await promClient.register.metrics());
 });
 
+// Short-lived in-process dashboard cache to absorb thundering herd
+const DASHBOARD_CACHE_TTL = 10_000; // 10 seconds
+let dashboardCache = null;
+let dashboardCacheExpiry = 0;
+
+// Fetch an upstream service, returning null (not throwing) on any failure
+async function fetchUpstream(url, options, log) {
+  try {
+    const res = await fetch(url, { ...options });
+    if (!res.ok) {
+      log.warn({ url, status: res.status }, 'Upstream returned non-OK response');
+      return null;
+    }
+    return res.json();
+  } catch (err) {
+    log.warn({ url, err: err.message }, 'Upstream fetch failed');
+    return null;
+  }
+}
+
+// Get dashboard overview
+app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
+  // Serve cached response if still fresh
+  if (dashboardCache && Date.now() < dashboardCacheExpiry) {
+    req.log.debug('Serving cached dashboard response');
+    return res.json(dashboardCache);
+  }
+
+  const sharedHeaders = { 'x-request-id': req.id };
+
+  const [authData, urlData, overviewData, topData] = await Promise.all([
+    fetchUpstream(`${AUTH_SERVICE_URL}/admin/stats`, {
+      headers: { 'X-API-Key': req.headers['x-api-key'], ...sharedHeaders },
+      signal: AbortSignal.timeout(2000)
+    }, req.log),
+    fetchUpstream(`${URL_SERVICE_URL}/admin/stats`, {
+      headers: { 'X-API-Key': req.headers['x-api-key'], ...sharedHeaders },
+      signal: AbortSignal.timeout(2000)
+    }, req.log),
+    fetchUpstream(`${ANALYTICS_SERVICE_URL}/stats/overview`, {
+      headers: { 'X-Service-Token': SERVICE_TOKEN, ...sharedHeaders },
+      signal: AbortSignal.timeout(2000)
+    }, req.log),
+    fetchUpstream(`${ANALYTICS_SERVICE_URL}/stats/top?limit=10`, {
+      headers: { 'X-Service-Token': SERVICE_TOKEN, ...sharedHeaders },
+      signal: AbortSignal.timeout(2000)
+    }, req.log)
+  ]);
+
+  const degraded = [
+    authData     === null && 'auth',
+    urlData      === null && 'url',
+    overviewData === null && 'analytics'
+  ].filter(Boolean);
+
+  const response = {
+    ...(degraded.length > 0 && { degraded }),
+    users: authData ? {
+      total:         authData.totalUsers,
+      recentSignups: authData.recentUsers,
+      totalApiKeys:  authData.totalApiKeys
+    } : null,
+    urls: {
+      total:       urlData?.totalUrls        ?? null,
+      recentUrls:  urlData?.recentUrls       ?? null,
+      totalClicks: overviewData?.totalClicks ?? null,
+      topUrls:     topData?.map(t => ({ slug: t.slug, clicks: t.totalClicks })) ?? null
+    }
+  };
+
+  // Update cache
+  dashboardCache    = response;
+  dashboardCacheExpiry = Date.now() + DASHBOARD_CACHE_TTL;
+
+  if (degraded.length > 0) {
+    req.log.warn({ degraded }, 'Dashboard response is partial');
+  }
+
+  res.json(response);
+});
 
 // List all users
 app.get('/admin/users', validateAdminKey, async (req, res) => {
   try {
     const response = await fetch(`${AUTH_SERVICE_URL}/admin/users`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'] },
+      headers: { 'X-API-Key': req.headers['x-api-key'], 'x-request-id': req.id },
       signal: AbortSignal.timeout(2000)
     });
     
@@ -120,7 +210,7 @@ app.get('/admin/users', validateAdminKey, async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (err) {
-    console.error('Users list error:', err);
+    req.log.error({ err }, 'Users list error');
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
@@ -129,7 +219,7 @@ app.get('/admin/users', validateAdminKey, async (req, res) => {
 app.get('/admin/urls', validateAdminKey, async (req, res) => {
   try {
     const response = await fetch(`${URL_SERVICE_URL}/admin/urls`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'] },
+      headers: { 'X-API-Key': req.headers['x-api-key'], 'x-request-id': req.id },
       signal: AbortSignal.timeout(2000)
     });
 
@@ -140,7 +230,7 @@ app.get('/admin/urls', validateAdminKey, async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (err) {
-    console.error('URLs list error:', err);
+    req.log.error({ err }, 'URLs list error');
     res.status(500).json({ error: 'Failed to fetch URLs' });
   }
 });
@@ -148,18 +238,12 @@ app.get('/admin/urls', validateAdminKey, async (req, res) => {
 // Get user details with their URLs
 app.get('/admin/users/:userId', validateAdminKey, async (req, res) => {
   try {
-    const { userId } = req.params;
-    
-    // Get user URLs by making a request as that user
-    // Note: This is a workaround since we don't have a direct endpoint
-    // In production, you'd want a proper admin endpoint
-    
     res.status(501).json({ 
       error: 'User details endpoint not implemented',
       note: 'Would need additional endpoints in auth-service and url-service'
     });
   } catch (err) {
-    console.error('User details error:', err);
+    req.log.error({ err }, 'User details error');
     res.status(500).json({ error: 'Failed to fetch user details' });
   }
 });
@@ -177,7 +261,8 @@ app.put('/admin/config', validateAdminKey, async (req, res) => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'X-Service-Token': process.env.CONFIG_WRITE_TOKEN || ''
+        'X-Service-Token': process.env.CONFIG_WRITE_TOKEN || '',
+        'x-request-id': req.id
       },
       body: JSON.stringify({ domain }),
       signal: AbortSignal.timeout(2000)
@@ -190,7 +275,7 @@ app.put('/admin/config', validateAdminKey, async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (err) {
-    console.error('Config update error:', err);
+    req.log.error({ err }, 'Config update error');
     res.status(500).json({ error: 'Failed to update configuration' });
   }
 });
@@ -198,7 +283,10 @@ app.put('/admin/config', validateAdminKey, async (req, res) => {
 // Get current configuration
 app.get('/admin/config', validateAdminKey, async (req, res) => {
   try {
-    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, { signal: AbortSignal.timeout(2000) });
+    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, {
+      headers: { 'x-request-id': req.id },
+      signal: AbortSignal.timeout(2000)
+    });
 
     if (!response.ok) {
       throw new Error('Failed to fetch config');
@@ -207,7 +295,7 @@ app.get('/admin/config', validateAdminKey, async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (err) {
-    console.error('Config fetch error:', err);
+    req.log.error({ err }, 'Config fetch error');
     res.status(500).json({ error: 'Failed to fetch configuration' });
   }
 });
@@ -221,10 +309,8 @@ app.get('/admin/search/urls', validateAdminKey, async (req, res) => {
       return res.status(400).json({ error: 'Search query required' });
     }
     
-    // Get all URLs and filter client-side
-    // In production, you'd want a proper search endpoint
     const response = await fetch(`${URL_SERVICE_URL}/admin/urls`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'] },
+      headers: { 'X-API-Key': req.headers['x-api-key'], 'x-request-id': req.id },
       signal: AbortSignal.timeout(2000)
     });
     
@@ -240,7 +326,7 @@ app.get('/admin/search/urls', validateAdminKey, async (req, res) => {
     
     res.json({ urls: filtered });
   } catch (err) {
-    console.error('Search error:', err);
+    req.log.error({ err }, 'Search error');
     res.status(500).json({ error: 'Search failed' });
   }
 });
@@ -258,7 +344,10 @@ app.get('/admin/health/services', validateAdminKey, async (req, res) => {
     const healthChecks = await Promise.all(
       services.map(async (service) => {
         try {
-          const response = await fetch(service.url, { signal: AbortSignal.timeout(2000) });
+          const response = await fetch(service.url, {
+            headers: { 'x-request-id': req.id },
+            signal: AbortSignal.timeout(2000)
+          });
           return {
             service: service.name,
             status: response.ok ? 'healthy' : 'unhealthy',
@@ -276,11 +365,26 @@ app.get('/admin/health/services', validateAdminKey, async (req, res) => {
     
     res.json({ services: healthChecks });
   } catch (err) {
-    console.error('Health check error:', err);
+    req.log.error({ err }, 'Health check error');
     res.status(500).json({ error: 'Health check failed' });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Admin service running on port ${PORT}`);
+const server = app.listen(PORT, () => {
+  logger.info({ port: PORT }, 'Admin service started');
 });
+
+const shutdown = async (signal) => {
+  logger.info({ signal }, 'Shutdown signal received — draining connections');
+  server.close(() => {
+    logger.info('Admin service shut down cleanly');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    logger.error('Shutdown timed out — forcing exit');
+    process.exit(1);
+  }, 30_000).unref();
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

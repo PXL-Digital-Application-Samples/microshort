@@ -27,8 +27,11 @@ services:
       - DB_USER=authuser
       - DB_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      - REDIS_URL=redis://redis:6379
     depends_on:
       auth-db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
@@ -70,12 +73,15 @@ services:
       - CONFIG_SERVICE_URL=http://config-service:3000
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
       - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
+      - REDIS_URL=redis://redis:6379
     depends_on:
       url-db:
         condition: service_healthy
       auth-service:
         condition: service_healthy
       config-service:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
@@ -114,7 +120,10 @@ services:
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
       - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
       - IP_HASH_SALT=${IP_HASH_SALT:-dev-ip-hash-salt-change-in-production}
+      - REDIS_URL=redis://redis:6379
     depends_on:
+      redis:
+        condition: service_healthy
       url-service:
         condition: service_healthy
       config-service:
@@ -217,7 +226,22 @@ services:
         soft: 262144
         hard: 262144
 
+  # Redis — shared cache and rate limiter
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   auth-db-data:
   url-db-data:
   clickhouse-data:
+  redis-data:

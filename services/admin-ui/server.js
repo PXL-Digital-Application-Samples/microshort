@@ -13,12 +13,29 @@ app.use(express.static(__dirname));
 
 app.get('/health', (_req, res) => res.status(200).send('OK'));
 
+app.get('/ready', (_req, res) => res.status(200).send('OK'));
+
 // SPA fallback - always serve index.html for any route
 app.get('*', (req, res) => {
     res.sendFile(join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`Admin UI running on port ${PORT}`);
     console.log(`Access the admin UI at http://localhost:${PORT}`);
 });
+
+const shutdown = (signal) => {
+    console.log(`Shutdown signal received (${signal}) — closing server`);
+    server.close(() => {
+        console.log('Admin UI server closed cleanly');
+        process.exit(0);
+    });
+    setTimeout(() => {
+        console.error('Shutdown timed out — forcing exit');
+        process.exit(1);
+    }, 30_000).unref();
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

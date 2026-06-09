@@ -45,7 +45,7 @@ flowchart TD
     PostgresDB[("PostgreSQL")]
     MySQLDB[("MySQL")]
     ClickHouseDB[("ClickHouse")]
-    Cache[("In-Memory Cache")]
+    Cache[("Redis Shared Cache")]
   end
   Visitor -->|"1. GET /slug"| RedirectService
   RedirectService -->|"2. get long URL"| URLService
@@ -168,7 +168,7 @@ docker compose logs -f
 - **Port**: 8080
 - **Purpose**: Public-facing redirect handler
 - **Features**:
-  - Fast redirects with in-memory caching
+  - Fast redirects with shared Redis caching
   - Home page at root domain
   - 404 handling for invalid URLs
   - No storage required - uses url-service API

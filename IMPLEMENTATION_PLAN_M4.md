@@ -1,6 +1,6 @@
 # IMPLEMENTATION PLAN — M4: Observability, Monitoring & Shared State
 
-> **Status**: Not started  
+> **Status**: Completed  
 > **Prerequisite**: M3 complete (analytics-service live on Java/Spring Boot + ClickHouse; all integration tests green)  
 > **Source of truth for scope**: PLANNING.md §5 and §8.2; CODE_REVIEW.md findings CR 6.2, 6.3, 6.7, §8.2
 

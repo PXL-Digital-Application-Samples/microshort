@@ -53,6 +53,8 @@ The root directory contains a suite of black-box integration tests that verify H
 npm install                     # install test dependencies (vitest) at root
 npm test                        # run default integration suite (excludes rate-limiting)
 npm run test:m2                 # run all M2 integration tests (excludes rate-limiting)
+npm run test:m3                 # run all M3 integration tests (excludes rate-limiting)
+npm run test:m4                 # run all M4 integration tests (readiness, metrics, etc.)
 npm run test:rate               # run rate-limiting tests specifically
 npm run test:e2e                # fresh stack spin up (down -v + up --wait) and run default suite
 npm run test:e2e:rate           # fresh stack spin up with rate-limiting overrides and run rate-limiting suite

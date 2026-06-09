@@ -1,14 +1,55 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, updateClickCount, getAllUrls, getUrlStats, pool } from './db.js';
+import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, updateClickCount, getAllUrls, getUrlStats, pool, checkHealth } from './db.js';
 import { nanoid } from 'nanoid';
+import pino from 'pino';
+import pinoHttp from 'pino-http';
+import { randomUUID } from 'crypto';
+import promClient from 'prom-client';
+import Redis from 'ioredis';
+import { RedisStore } from 'rate-limit-redis';
+
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+
+const servicePrefix = 'microshort_url_';
+promClient.collectDefaultMetrics({ prefix: servicePrefix });
+
+// HTTP request counter
+const httpRequests = new promClient.Counter({
+  name: `${servicePrefix}http_requests_total`,
+  help: 'Total HTTP requests handled',
+  labelNames: ['method', 'route', 'status']
+});
+
+// HTTP request duration histogram
+const httpDuration = new promClient.Histogram({
+  name: `${servicePrefix}http_request_duration_seconds`,
+  help: 'HTTP request duration in seconds',
+  labelNames: ['method', 'route'],
+  buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1]
+});
+
+// Custom metric: URL creation counter
+const urlCreations = new promClient.Counter({
+  name: 'microshort_url_creations_total',
+  help: 'Short URLs created',
+  labelNames: ['type']    // 'auto' (nanoid), 'custom' (user-specified slug)
+});
+
+const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379', {
+  lazyConnect: true,
+  enableOfflineQueue: false,
+  maxRetriesPerRequest: 1,
+  connectTimeout: 2000
+});
+
+redis.on('error', err => logger.error({ err }, 'Redis error'));
 
 const app = express();
 const PORT = process.env.PORT || 3002;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3001';
 const CONFIG_SERVICE_URL = process.env.CONFIG_SERVICE_URL || 'http://config-service:3000';
-
 const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:3005';
 const SERVICE_TOKEN         = process.env.SERVICE_TOKEN          || '';
 const CLICK_SYNC_INTERVAL_MS = parseInt(process.env.CLICK_SYNC_INTERVAL_MS ?? '60000');
@@ -16,15 +57,44 @@ const CLICK_SYNC_INTERVAL_MS = parseInt(process.env.CLICK_SYNC_INTERVAL_MS ?? '6
 // Enable trust proxy for rate limiting if behind a reverse proxy
 app.set('trust proxy', 1);
 
+app.use(pinoHttp({
+  logger,
+  genReqId: req => req.headers['x-request-id'] ?? randomUUID(),
+  customSuccessMessage: (req, res) => `${req.method} ${req.url} → ${res.statusCode}`,
+  autoLogging: { ignore: req => req.url === '/health' || req.url === '/ready' || req.url === '/metrics' }
+}));
+
+app.use((req, res, next) => {
+  res.setHeader('X-Request-ID', req.id);
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
+
+app.use((req, res, next) => {
+  if (['/health', '/ready', '/metrics'].includes(req.path)) return next();
+
+  const end = httpDuration.startTimer({ method: req.method });
+  res.on('finish', () => {
+    const route = req.route?.path ?? 'unknown';
+    end({ route });
+    httpRequests.inc({ method: req.method, route, status: String(res.statusCode) });
+  });
+  next();
+});
 
 // Rate limiter for URL creation
 const urlCreateLimiter = rateLimit({
   windowMs: parseInt(process.env.URL_RATE_LIMIT_WINDOW_MS ?? String(60 * 1000)),
   limit:    parseInt(process.env.URL_RATE_LIMIT_MAX ?? '30'),
-  standardHeaders: 'draft-6',  // separate RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset headers
+  standardHeaders: 'draft-6',
   legacyHeaders: false,
+  passOnStoreError: true,
+  store: new RedisStore({
+    sendCommand: (...args) => redis.call(...args),
+    prefix: 'rl-url:'
+  }),
   message: { error: 'Too many requests, please try again later' }
 });
 
@@ -34,19 +104,26 @@ let cacheTime = 0;
 const CACHE_TTL = 60000; // 1 minute
 
 // Get domain from config service
-async function getDomain() {
+async function getDomain(reqId) {
   if (cachedDomain && Date.now() - cacheTime < CACHE_TTL) {
     return cachedDomain;
   }
   
   try {
-    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, { signal: AbortSignal.timeout(2000) });
+    const headers = {};
+    if (reqId) {
+      headers['x-request-id'] = reqId;
+    }
+    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, {
+      headers,
+      signal: AbortSignal.timeout(2000)
+    });
     const data = await response.json();
     cachedDomain = data.domain;
     cacheTime = Date.now();
     return cachedDomain;
   } catch (err) {
-    console.error('Failed to get domain:', err);
+    logger.error({ err }, 'Failed to get domain');
     throw new Error('Configuration service unavailable');
   }
 }
@@ -62,7 +139,10 @@ async function validateApiKey(req, res, next) {
   try {
     const response = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-request-id': req.id
+      },
       body: JSON.stringify({ apiKey }),
       signal: AbortSignal.timeout(2000)
     });
@@ -75,14 +155,26 @@ async function validateApiKey(req, res, next) {
     req.user = { id: data.userId, role: data.role };
     next();
   } catch (err) {
-    console.error('Auth validation error:', err);
+    req.log.error({ err }, 'Auth validation error');
     res.status(503).json({ error: 'Authentication service unavailable' });
   }
 }
 
-// Health check
+// Health check (liveness)
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
+});
+
+// Readiness check
+app.get('/ready', async (req, res) => {
+  const ok = await checkHealth();
+  res.status(ok ? 200 : 503).json({ status: ok ? 'ready' : 'unavailable' });
+});
+
+// Metrics
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', promClient.register.contentType);
+  res.end(await promClient.register.metrics());
 });
 
 // Create short URL
@@ -120,8 +212,10 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
     
     // Create URL
     const urlRecord = await createUrl(req.user.id, url, slug);
-    const domain = await getDomain();
+    const domain = await getDomain(req.id);
     
+    urlCreations.inc({ type: customSlug ? 'custom' : 'auto' });
+
     res.status(201).json({
       id: urlRecord.id,
       shortUrl: `${domain}/${slug}`,
@@ -130,7 +224,7 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
       createdAt: urlRecord.created_at
     });
   } catch (err) {
-    console.error('Create URL error:', err);
+    req.log.error({ err }, 'Create URL error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -145,13 +239,12 @@ app.get('/urls/:slug', async (req, res) => {
       return res.status(404).json({ error: 'URL not found' });
     }
     
-    
     res.json({
       longUrl: urlRecord.long_url,
       slug: urlRecord.slug
     });
   } catch (err) {
-    console.error('Get URL error:', err);
+    req.log.error({ err }, 'Get URL error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -160,7 +253,7 @@ app.get('/urls/:slug', async (req, res) => {
 app.get('/urls', validateApiKey, async (req, res) => {
   try {
     const urls = await getUserUrls(req.user.id);
-    const domain = await getDomain();
+    const domain = await getDomain(req.id);
     
     const formattedUrls = urls.map(u => ({
       id: u.id,
@@ -173,7 +266,7 @@ app.get('/urls', validateApiKey, async (req, res) => {
     
     res.json({ urls: formattedUrls });
   } catch (err) {
-    console.error('List URLs error:', err);
+    req.log.error({ err }, 'List URLs error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -196,7 +289,7 @@ app.delete('/urls/:slug', validateApiKey, async (req, res) => {
     await deleteUrl(urlRecord.id);
     res.json({ message: 'URL deleted', slug });
   } catch (err) {
-    console.error('Delete URL error:', err);
+    req.log.error({ err }, 'Delete URL error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -212,7 +305,10 @@ app.get('/admin/urls', async (req, res) => {
     // Validate admin key via auth service
     const authResponse = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-request-id': req.id
+      },
       body: JSON.stringify({ apiKey }),
       signal: AbortSignal.timeout(2000)
     });
@@ -227,7 +323,7 @@ app.get('/admin/urls', async (req, res) => {
     }
 
     const urls = await getAllUrls();
-    const domain = await getDomain();
+    const domain = await getDomain(req.id);
     
     const formattedUrls = urls.map(u => ({
       id: u.id,
@@ -241,7 +337,7 @@ app.get('/admin/urls', async (req, res) => {
     
     res.json({ urls: formattedUrls });
   } catch (err) {
-    console.error('Admin URLs error:', err);
+    req.log.error({ err }, 'Admin URLs error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -257,7 +353,10 @@ app.get('/admin/stats', async (req, res) => {
     // Validate admin key
     const authResponse = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-request-id': req.id
+      },
       body: JSON.stringify({ apiKey }),
       signal: AbortSignal.timeout(2000)
     });
@@ -274,34 +373,84 @@ app.get('/admin/stats', async (req, res) => {
     const stats = await getUrlStats();
     res.json(stats);
   } catch (err) {
-    console.error('Admin stats error:', err);
+    req.log.error({ err }, 'Admin stats error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 async function syncClickCounts() {
+  const jobId = randomUUID();
+  logger.info({ job: 'click-sync', jobId }, 'Starting click count sync');
   try {
     const [rows] = await pool.execute('SELECT slug FROM urls');
-    if (rows.length === 0) return;
+    if (rows.length === 0) {
+      logger.info({ job: 'click-sync', jobId }, 'No slugs to sync');
+      return;
+    }
 
     const slugs = rows.map(r => r.slug).join(',');
     const res = await fetch(
       `${ANALYTICS_SERVICE_URL}/stats/counts?slugs=${encodeURIComponent(slugs)}`,
-      { headers: { 'X-Service-Token': SERVICE_TOKEN }, signal: AbortSignal.timeout(5000) }
+      {
+        headers: {
+          'X-Service-Token': SERVICE_TOKEN,
+          'x-request-id': jobId
+        },
+        signal: AbortSignal.timeout(5000)
+      }
     );
-    if (!res.ok) return;
+    if (!res.ok) {
+      logger.warn({ job: 'click-sync', jobId, status: res.status }, 'Analytics stats counts returned non-OK response');
+      return;
+    }
 
     const counts = await res.json(); // { slug: count, ... }
     await Promise.all(
       Object.entries(counts).map(([slug, count]) => updateClickCount(slug, count))
     );
+    logger.info({ job: 'click-sync', jobId }, 'Click sync complete');
   } catch (err) {
-    console.error('Click count sync failed:', err);
+    logger.error({ job: 'click-sync', jobId, err }, 'Click count sync failed');
   }
 }
 
-setInterval(syncClickCounts, CLICK_SYNC_INTERVAL_MS);
+const syncIntervalId = setInterval(syncClickCounts, CLICK_SYNC_INTERVAL_MS);
 
-app.listen(PORT, () => {
-  console.log(`URL service running on port ${PORT}`);
+const server = app.listen(PORT, () => {
+  logger.info({ port: PORT }, 'URL service started');
 });
+
+const shutdown = async (signal) => {
+  logger.info({ signal }, 'Shutdown signal received — draining connections');
+  server.close(async () => {
+    try {
+      clearInterval(syncIntervalId);
+      logger.info('Sync interval cleared');
+    } catch (err) {
+      logger.error({ err }, 'Error clearing sync interval');
+    }
+    try {
+      await pool.end();
+      logger.info('MySQL connection pool closed');
+    } catch (err) {
+      logger.error({ err }, 'Error closing MySQL connection pool');
+    }
+    try {
+      await redis.quit();
+      logger.info('Redis connection closed');
+    } catch (err) {
+      logger.error({ err }, 'Error closing Redis connection');
+    }
+    logger.info('URL service shut down cleanly');
+    process.exit(0);
+  });
+
+  // Force-quit if graceful drain takes > 30 s
+  setTimeout(() => {
+    logger.error('Shutdown timed out — forcing exit');
+    process.exit(1);
+  }, 30_000).unref();
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

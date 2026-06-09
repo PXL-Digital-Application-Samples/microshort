@@ -152,12 +152,11 @@ Goal: make the system measurable, and make stateful components survive scaling.
 
 ### M5 — Configuration & secrets *(core teaching topic)*
 Goal: make config and secrets a first-class, teachable concern.
-- Replace config-service's file-on-disk store with a backed store (a small DB, or
-  external/orchestrator-provided config) so settings survive restarts and stay
+- Do not replace config-service's file-on-disk store with a backed store (a small DB, or external/orchestrator-provided config) so settings survive restarts and stay
   consistent across replicas (CR §8.2, 6.2). Students may first observe the
-  file-store limitation, but the milestone's deliverable is the backed store.
+  file-store limitation, and need to fix this themselves.
 - Validate config against the existing `config.schema.json` at load and on PUT
-  (CR 7.2).
+  (CR 7.2) - if this is still needed.
 - Remove committed secrets from `.env`; provide a `.env.example` with
   placeholders and document a secret-injection story the (separately taught)
   deployments can satisfy (CR 2.6).
@@ -178,7 +177,7 @@ the API speak one dialect (CR §8.2).
 
 ### M7 — Consistency, docs & tests
 Goal: the repo describes itself accurately and is safe to change.
-- Reconcile README + `architecture.mermaid` with reality once analytics lands;
+- Reconcile README with reality once analytics lands;
   settle analytics-service as **Java + ClickHouse** everywhere (CR 7.1).
 - Collapse the two compose files (or generate one from the other) to stop drift
   (CR 6.5).

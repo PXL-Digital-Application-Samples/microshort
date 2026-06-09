@@ -2,7 +2,7 @@ import postgres from 'postgres';
 import { nanoid } from 'nanoid';
 import { createHash } from 'crypto';
 
-const sql = postgres({
+export const sql = postgres({
   host: process.env.DB_HOST || 'auth-db',
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'auth',

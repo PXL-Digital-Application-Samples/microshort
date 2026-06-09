@@ -13,6 +13,7 @@ export function resetDb() {
   try {
     execSync('docker compose exec -T auth-db psql -U authuser -d auth -c "TRUNCATE users CASCADE"');
     execSync('docker compose exec -T url-db mysql -u urluser -purlpass -D urlshort -e "TRUNCATE TABLE urls;"');
+    execSync('docker compose exec -T redis redis-cli FLUSHALL');
   } catch (err) {
     console.error('Failed to reset databases:', err.message);
   }

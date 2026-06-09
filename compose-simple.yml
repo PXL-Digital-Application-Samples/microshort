@@ -21,8 +21,10 @@ services:
       - DB_USER=authuser
       - DB_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      - REDIS_URL=redis://redis:6379
     depends_on:
       - auth-db
+      - redis
 
   # Auth Database
   auth-db:
@@ -31,7 +33,8 @@ services:
       - POSTGRES_DB=auth
       - POSTGRES_USER=authuser
       - POSTGRES_PASSWORD=${AUTH_DB_PASSWORD:-authpass}
-      # Redirect Service
+
+  # Redirect Service
   redirect-service:
     build: ./services/redirect-service
     ports:
@@ -43,7 +46,9 @@ services:
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
       - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
       - IP_HASH_SALT=${IP_HASH_SALT:-dev-ip-hash-salt-change-in-production}
+      - REDIS_URL=redis://redis:6379
     depends_on:
+      - redis
       - url-service
       - config-service
       - analytics-service
@@ -64,10 +69,12 @@ services:
       - CONFIG_SERVICE_URL=http://config-service:3000
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
       - SERVICE_TOKEN=${SERVICE_TOKEN:-dev-service-token-change-in-production}
+      - REDIS_URL=redis://redis:6379
     depends_on:
       - url-db
       - auth-service
       - config-service
+      - redis
 
   # URL Database
   url-db:
@@ -112,7 +119,17 @@ services:
         soft: 262144
         hard: 262144
 
+  # Redis — shared cache and rate limiter
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
 volumes:
   auth-db-data:
   url-db-data:
   clickhouse-data:
+  redis-data:
