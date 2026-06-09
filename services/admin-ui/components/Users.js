@@ -56,8 +56,8 @@ export function Users(van, html, apiCall) {
                                         <td>${user.email}</td>
                                         <td>${formatDate(user.createdAt)}</td>
                                         <td>
-                                            <span class=${user.id === 1 ? 'badge badge-admin' : 'badge'}>
-                                                ${user.id === 1 ? 'Admin' : 'User'}
+                                            <span class=${user.role === 'admin' ? 'badge badge-admin' : 'badge'}>
+                                                ${user.role === 'admin' ? 'Admin' : 'User'}
                                             </span>
                                         </td>
                                     </tr>

@@ -64,6 +64,7 @@ Access at http://localhost:3004
 ## Environment Variables
 
 - `PORT` - Server port (default: 3004)
+- `ADMIN_API_URL` - Public (browser-reachable) URL for the admin service (default: `http://localhost:3003`)
 
 ## File Structure
 

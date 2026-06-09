@@ -236,17 +236,12 @@ app.get('/admin/urls', validateAdminKey, async (req, res) => {
   }
 });
 
-// Get user details with their URLs
 app.get('/admin/users/:userId', validateAdminKey, async (req, res) => {
-  try {
-    res.status(501).json({ 
-      error: 'User details endpoint not implemented',
-      note: 'Would need additional endpoints in auth-service and url-service'
-    });
-  } catch (err) {
-    req.log.error({ err }, 'User details error');
-    res.status(500).json({ error: 'Failed to fetch user details' });
-  }
+  res.status(501).json({
+    error: 'Not implemented',
+    note: 'User-detail view requires new endpoints in auth-service and url-service. '
+        + 'Tracked for M7.'
+  });
 });
 
 // Update configuration
@@ -310,22 +305,20 @@ app.get('/admin/search/urls', validateAdminKey, async (req, res) => {
       return res.status(400).json({ error: 'Search query required' });
     }
     
-    const response = await fetch(`${URL_SERVICE_URL}/admin/urls`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'], 'x-request-id': req.id },
-      signal: AbortSignal.timeout(2000)
-    });
+    const response = await fetch(
+      `${URL_SERVICE_URL}/admin/urls?q=${encodeURIComponent(q)}`,
+      {
+        headers: { 'X-API-Key': req.headers['x-api-key'], 'x-request-id': req.id },
+        signal: AbortSignal.timeout(2000)
+      }
+    );
     
     if (!response.ok) {
-      throw new Error('Failed to fetch URLs');
+      throw new Error('Failed to search URLs');
     }
     
     const data = await response.json();
-    const filtered = data.urls.filter(url => 
-      url.slug.includes(q) || 
-      url.longUrl.includes(q)
-    );
-    
-    res.json({ urls: filtered });
+    res.json(data);
   } catch (err) {
     req.log.error({ err }, 'Search error');
     res.status(500).json({ error: 'Search failed' });

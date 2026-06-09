@@ -14,7 +14,7 @@ export function App(van, html) {
     const error = van.state('');
     
     // API base URL
-    const API_BASE = 'http://localhost:3003';
+    const API_BASE = window.ADMIN_API_BASE || 'http://localhost:3003';
     
     // API helper
     const apiCall = async (endpoint, options = {}) => {
@@ -91,7 +91,7 @@ export function App(van, html) {
                     </button>
                     
                     <p class="hint">
-                        First user (ID 1) is admin. Use their API key.
+                        Admin-role users only. Use an API key from an admin account.
                     </p>
                 </div>
             </div>

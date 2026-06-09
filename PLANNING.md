@@ -163,19 +163,18 @@ Goal: make config and secrets a first-class, teachable concern.
   with placeholders; switch true secrets in compose to `:?` form so missing vars
   fail loudly; add `envalid` to every Node service for startup fail-fast (CR 2.6).
 
-### M6 — Admin UI & API consistency
+### M6 — Admin UI & API consistency ✅ COMPLETE
 Goal: keep the zero-build (VanJS + htm) UI, but make it work anywhere and have
 the API speak one dialect (CR §8.2).
-- Make the admin-ui API base URL runtime-configurable (e.g. a small
-  `/config.js` served by the UI server, or a reverse-proxy same-origin setup)
-  instead of the hard-coded `localhost:3003` (CR 5.1).
-- Vendor VanJS/htm into the repo and serve them from the UI's own static server
-  (keeping the zero-build approach) so the UI works offline and isn't hostage to
-  public CDNs (CR 5.2).
-- Standardise the admin API on one casing (camelCase) end-to-end so the UI stops
-  special-casing shapes (CR 4.2).
-- Implement or formally retire the 501 stubs (`/admin/users/:id`,
-  in-memory search) (CR 4.4).
+- Make the admin-ui API base URL runtime-configurable via a `/config.js` endpoint
+  served by the UI server, seeded from `ADMIN_API_URL` env var (CR 5.1).
+- Vendor VanJS 1.6.0 and htm 3.1.1 into the repo and serve them from the UI's own
+  static server (CR 5.2); UI works offline, CDN-free, and with version pinning.
+- Standardise the admin API on camelCase end-to-end: url-service `topUrls` maps
+  `long_url` → `longUrl`; auth-service `getAllUsers` adds `role` and maps
+  `created_at` → `createdAt`; admin-ui updated to consume consistent shapes (CR 4.2).
+- Formally retire `GET /admin/users/:userId` stub (M7); push `GET /admin/search/urls`
+  filter to url-service DB via `?q=` param — removes fetch-all-then-filter (CR 4.4).
 
 ### M7 — Consistency, docs & tests
 Goal: the repo describes itself accurately and is safe to change.

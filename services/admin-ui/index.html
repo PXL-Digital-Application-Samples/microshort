@@ -9,10 +9,13 @@
 <body>
     <div id="app"></div>
     
+    <!-- Runtime config: sets window.ADMIN_API_BASE from server env var -->
+    <script src="/config.js"></script>
+    
     <!-- VanJS -->
     <script type="module">
-        import van from "https://cdn.jsdelivr.net/gh/vanjs-org/van/public/van-1.5.2.min.js";
-        import htm from "https://unpkg.com/htm@3/dist/htm.module.js";
+        import van from "/vendor/van.min.js";
+        import htm from "/vendor/htm.module.js";
         
         // Initialize htm with VanJS
         const html = htm.bind((tag, props, ...children) => {

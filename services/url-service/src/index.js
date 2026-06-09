@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { env } from './env.js';
-import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, updateClickCount, getAllUrls, getUrlStats, pool, checkHealth } from './db.js';
+import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, updateClickCount, getAllUrls, searchUrls, getUrlStats, pool, checkHealth } from './db.js';
 import { nanoid } from 'nanoid';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
@@ -323,10 +323,11 @@ app.get('/admin/urls', async (req, res) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const urls = await getAllUrls();
+    const { q } = req.query;
+    const rawUrls = q ? await searchUrls(q) : await getAllUrls();
     const domain = await getDomain(req.id);
     
-    const formattedUrls = urls.map(u => ({
+    const formattedUrls = rawUrls.map(u => ({
       id: u.id,
       shortUrl: `${domain}/${u.slug}`,
       longUrl: u.long_url,

@@ -15,6 +15,14 @@ app.get('/health', (_req, res) => res.status(200).send('OK'));
 
 app.get('/ready', (_req, res) => res.status(200).send('OK'));
 
+// Serves runtime config to the browser. ADMIN_API_URL must be the
+// host-side URL that browsers use to reach admin-service.
+app.get('/config.js', (req, res) => {
+  const base = process.env.ADMIN_API_URL || 'http://localhost:3003';
+  res.type('application/javascript');
+  res.send(`window.ADMIN_API_BASE = ${JSON.stringify(base)};`);
+});
+
 // SPA fallback - always serve index.html for any route
 app.get('*', (req, res) => {
     res.sendFile(join(__dirname, 'index.html'));

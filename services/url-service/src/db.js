@@ -84,6 +84,15 @@ export async function getAllUrls() {
   return rows;
 }
 
+export async function searchUrls(q) {
+  const pattern = `%${q}%`;
+  const [rows] = await pool.execute(
+    'SELECT * FROM urls WHERE slug LIKE ? OR long_url LIKE ? ORDER BY created_at DESC LIMIT 100',
+    [pattern, pattern]
+  );
+  return rows;
+}
+
 // Admin: Get URL statistics
 export async function getUrlStats() {
   const [[totalStats]] = await pool.execute(
@@ -102,6 +111,10 @@ export async function getUrlStats() {
     totalUrls: parseInt(totalStats.total_urls),
     totalClicks: parseInt(totalStats.total_clicks || 0),
     recentUrls: parseInt(recentStats.recent_urls),
-    topUrls: topUrls
+    topUrls: topUrls.map(u => ({
+      slug: u.slug,
+      longUrl: u.long_url,
+      clicks: u.clicks
+    }))
   };
 }

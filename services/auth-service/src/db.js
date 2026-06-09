@@ -105,14 +105,18 @@ export async function checkHealth() {
   }
 }
 
-// Admin: Get all users
 export async function getAllUsers() {
   const users = await sql`
-    SELECT id, email, created_at
+    SELECT id, email, role, created_at
     FROM users
     ORDER BY created_at DESC
   `;
-  return users;
+  return users.map(u => ({
+    id: u.id,
+    email: u.email,
+    role: u.role,
+    createdAt: u.created_at
+  }));
 }
 
 // Admin: Get auth statistics

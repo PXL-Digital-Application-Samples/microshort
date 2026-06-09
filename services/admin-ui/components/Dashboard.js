@@ -32,7 +32,6 @@ export function Dashboard(van, html, apiCall) {
                         <div class="url-item">
                             <span class="url-slug">${url.slug}</span>
                             <span class="url-clicks">${url.clicks} clicks</span>
-                            <div class="url-long">${url.long_url}</div>
                         </div>
                     `)
                 }
