@@ -11,6 +11,8 @@ const PORT = process.env.PORT || 3004;
 // Serve static files
 app.use(express.static(__dirname));
 
+app.get('/health', (_req, res) => res.status(200).send('OK'));
+
 // SPA fallback - always serve index.html for any route
 app.get('*', (req, res) => {
     res.sendFile(join(__dirname, 'index.html'));

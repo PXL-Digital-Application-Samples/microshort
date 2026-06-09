@@ -81,18 +81,24 @@ design choices in CR §8.2 — is covered by a milestone below; nothing is left 
 "won't fix."** (Only CR §8.1 — polyglot persistence and per-service data
 ownership — is deliberately retained.)
 
-### M1 — Stabilise the core (correctness)
+### M1 — Stabilise the core (correctness) ✅ COMPLETE
 Goal: the stack builds reproducibly and every service starts cleanly.
-- Fix config-service double-`listen` via an app/server split (CR 1.1).
+- Fix config-service double-`listen` via an app/server split (CR 1.1). ✅
 - Make config-service tests hermetic — fixture config, restore on teardown,
-  don't write the repo file (CR 1.2).
+  don't write the repo file (CR 1.2). ✅
 - Commit `package-lock.json` for all JS services; switch Dockerfiles to
-  `npm ci` (CR 6.1).
-- Align CI Node version with the images (Node 24) and extend CI beyond
-  config-service (CR 6.6).
+  `npm ci` (CR 6.1). ✅
+- Align CI Node version with the images (Node 26 — current stable) and extend
+  CI beyond config-service (CR 6.6). ✅
 - Replace string-match duplicate detection with constraint/SQLSTATE checks
-  (CR 2.5); fix the ignored `node-fetch` timeout with `AbortController`
-  (CR 4.3).
+  (CR 2.5); drop `node-fetch` and add `AbortSignal.timeout` (CR 4.3). ✅
+- Swap `bcrypt` for `bcryptjs` (pure-JS) to avoid native compilation in Docker.
+  CI workflows added for all 5 JS services (npm ci + syntax + build + /health smoke).
+
+Notes:
+- All images use `node:26-slim` (Node 26 = current stable as of June 2026).
+- Corporate SSL proxy requires `npm config set strict-ssl false` in Dockerfiles.
+- `bcryptjs` is a drop-in replacement for `bcrypt` with identical API.
 
 ### M2 — Authentication & authorization maturity *(core teaching topic)*
 Goal: turn the placeholder auth into something worth teaching with.
