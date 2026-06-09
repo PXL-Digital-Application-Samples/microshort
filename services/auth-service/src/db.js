@@ -1,7 +1,7 @@
 import postgres from 'postgres';
 import { nanoid } from 'nanoid';
-import { createHash } from 'crypto';
 import { env } from './env.js';
+import { hashKey } from './utils.js';
 
 export const sql = postgres({
   host: env.DB_HOST,
@@ -13,10 +13,6 @@ export const sql = postgres({
   idle_timeout: 20,
   connect_timeout: 10,
 });
-
-function hashKey(key) {
-  return createHash('sha256').update(key).digest('hex');
-}
 
 // Create a new user
 export async function createUser(email, passwordHash) {

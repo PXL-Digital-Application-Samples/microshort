@@ -1,10 +1,11 @@
 import express from 'express';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
 import promClient from 'prom-client';
 import Redis from 'ioredis';
 import { env } from './env.js';
+import { hashIp } from './utils.js';
 
 const logger = pino({ level: env.LOG_LEVEL });
 
@@ -126,10 +127,6 @@ async function getRedirectUrl(slug, reqLog, reqId) {
   }
 }
 
-function hashIp(ip) {
-  return createHash('sha256').update((ip || '0.0.0.0') + IP_HASH_SALT).digest('hex');
-}
-
 const eventBuffer = [];
 
 function bufferEvent(slug, userAgent, referer, ip) {
@@ -138,7 +135,7 @@ function bufferEvent(slug, userAgent, referer, ip) {
     ts:        new Date().toISOString(),
     referrer:  referer    || '',
     userAgent: userAgent  || '',
-    ipHash:    hashIp(ip)
+    ipHash:    hashIp(ip, IP_HASH_SALT)
   });
   if (eventBuffer.length >= ANALYTICS_BATCH_SIZE) {
     flushEvents().catch(err => logger.error({ err }, 'Buffered analytics flush failed'));

@@ -5,6 +5,10 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "start":         "docker compose up -d --build --wait",
+    "stop":          "docker compose down",
+    "logs":          "docker compose logs -f",
+    "reset":         "docker compose down -v && docker compose up -d --build --wait",
     "test":          "vitest run",
     "test:watch":    "vitest",
     "test:m2":       "vitest run --reporter=verbose tests/integration/m2",

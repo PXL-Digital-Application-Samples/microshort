@@ -2,17 +2,13 @@ FROM node:26-slim
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+COPY --chown=node:node package*.json ./
 
-# Install dependencies
 RUN npm config set strict-ssl false && npm ci --omit=dev
 
-# Copy application code
-COPY src/ ./src/
+COPY --chown=node:node src/ ./src/
 
-# Expose port
 EXPOSE 3002
 
-# Start the service
+USER node
 CMD ["node", "src/index.js"]

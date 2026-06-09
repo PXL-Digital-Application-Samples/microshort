@@ -29,18 +29,23 @@ jobs:
           - service: admin-service
             port: 3003
             entry: src/index.js
+            has_tests: false
           - service: admin-ui
             port: 3004
             entry: server.js
+            has_tests: false
           - service: auth-service
             port: 3001
             entry: src/index.js
+            has_tests: true
           - service: redirect-service
             port: 8080
             entry: src/index.js
+            has_tests: true
           - service: url-service
             port: 3002
             entry: src/index.js
+            has_tests: true
 
     defaults:
       run:
@@ -59,6 +64,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run unit tests
+        if: matrix.has_tests
+        run: npm test
 
       - name: Syntax check
         run: node --check ${{ matrix.entry }}

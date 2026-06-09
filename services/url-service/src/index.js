@@ -3,6 +3,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { env } from './env.js';
 import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, updateClickCount, getAllUrls, searchUrls, getUrlStats, pool, checkHealth } from './db.js';
+import { isValidSlug } from './utils.js';
 import { nanoid } from 'nanoid';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
@@ -200,7 +201,7 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
       slug = nanoid(6); // 6 character random slug
     } else {
       // Validate custom slug
-      if (!/^[a-zA-Z0-9_-]+$/.test(slug) || slug.length > 50) {
+      if (!isValidSlug(slug)) {
         return res.status(400).json({ error: 'Invalid slug format' });
       }
     }
