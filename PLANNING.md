@@ -1,9 +1,8 @@
 # PLANNING — microshort
 
-> Companion to [CODE_REVIEW.md](./CODE_REVIEW.md). This is a **planning
-> document**, not a changelog: nothing here has been built yet. It sequences the
-> work needed to turn the current half-finished prototype into a coherent
-> microservices teaching platform.
+> Companion to [CODE_REVIEW.md](./CODE_REVIEW.md). This document sequences the
+> work needed to turn the current prototype into a coherent microservices teaching
+> platform. **M1 is complete** (2026-06-09); see milestone notes below.
 
 ## 1. What this project is for
 
@@ -33,11 +32,12 @@ Two consequences shape everything below:
 Six services exist as small Express apps (config, auth, url, redirect, admin,
 admin-ui); auth→PostgreSQL, url→MySQL, the rest are stateless. The happy path
 (register → API key → shorten → redirect → admin dashboard) is wired and works
-locally via `compose.yml`. The **analytics-service does not exist** (only stubs
-and an empty `url_analytics` table point at it), config-service has a
-start-up-crashing bug, several admin features are 501 stubs, auth/roles are
-hard-coded, and only config-service has tests/CI. See CODE_REVIEW.md for the
-itemised list.
+locally via `compose.yml`. All services build reproducibly on Node 26, have
+committed lockfiles, and are covered by CI (npm ci + syntax + docker build +
+/health smoke). The **analytics-service does not exist** (only stubs and an
+empty `url_analytics` table point at it), several admin features are 501 stubs,
+and auth/roles are hard-coded (`user_id === 1`). See CODE_REVIEW.md for the
+itemised list; see IMPLEMENTATION_PLAN_M1.md for what M1 resolved.
 
 ## 3. Guiding principles for the work
 
