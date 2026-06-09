@@ -77,6 +77,14 @@ app.get('/config/domain', async (_req: Request, res: Response): Promise<void> =>
  * /config/domain:
  *   put:
  *     summary: Update the configured domain
+ *     security:
+ *       - serviceToken: []
+ *     parameters:
+ *       - in: header
+ *         name: X-Service-Token
+ *         required: true
+ *         schema:
+ *           type: string
  *     requestBody:
  *       required: true
  *       content:
@@ -92,16 +100,22 @@ app.get('/config/domain', async (_req: Request, res: Response): Promise<void> =>
  *         description: Domain updated successfully
  *       400:
  *         description: Invalid request
+ *       401:
+ *         description: Unauthorized
  */
 app.put('/config/domain', async (req: Request, res: Response): Promise<void> => {
   try {
+    const expected = process.env.CONFIG_WRITE_TOKEN;
+    if (!expected || req.headers['x-service-token'] !== expected) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
     const { domain } = req.body;
     if (!domain || typeof domain !== 'string') {
       res.status(400).json({ error: 'Invalid or missing domain' });
       return;
     }
-
-    // TODO: Add authentication later
 
     const updatedConfig: Config = { domain };
     await saveConfig(updatedConfig);

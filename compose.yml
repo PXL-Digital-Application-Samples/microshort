@@ -6,6 +6,7 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
+      - CONFIG_WRITE_TOKEN=${CONFIG_WRITE_TOKEN:-dev-config-token-change-in-production}
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
       interval: 10s
@@ -130,6 +131,7 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:3001
       - URL_SERVICE_URL=http://url-service:3002
       - CONFIG_SERVICE_URL=http://config-service:3000
+      - CONFIG_WRITE_TOKEN=${CONFIG_WRITE_TOKEN:-dev-config-token-change-in-production}
     depends_on:
       auth-service:
         condition: service_healthy

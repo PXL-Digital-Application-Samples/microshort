@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, incrementClicks, getAllUrls, getUrlStats } from './db.js';
 import { nanoid } from 'nanoid';
 
@@ -8,8 +9,20 @@ const PORT = process.env.PORT || 3002;
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3001';
 const CONFIG_SERVICE_URL = process.env.CONFIG_SERVICE_URL || 'http://config-service:3000';
 
+// Enable trust proxy for rate limiting if behind a reverse proxy
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
+
+// Rate limiter for URL creation
+const urlCreateLimiter = rateLimit({
+  windowMs: parseInt(process.env.URL_RATE_LIMIT_WINDOW_MS ?? String(60 * 1000)),
+  limit:    parseInt(process.env.URL_RATE_LIMIT_MAX ?? '30'),
+  standardHeaders: 'draft-6',  // separate RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset headers
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' }
+});
 
 // Cache for domain config
 let cachedDomain = null;
@@ -55,7 +68,7 @@ async function validateApiKey(req, res, next) {
     }
 
     const data = await response.json();
-    req.user = { id: data.userId };
+    req.user = { id: data.userId, role: data.role };
     next();
   } catch (err) {
     console.error('Auth validation error:', err);
@@ -69,7 +82,7 @@ app.get('/health', (req, res) => {
 });
 
 // Create short URL
-app.post('/urls', validateApiKey, async (req, res) => {
+app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
   try {
     const { url, customSlug } = req.body;
     
@@ -209,7 +222,7 @@ app.get('/admin/urls', async (req, res) => {
     }
 
     const authData = await authResponse.json();
-    if (authData.userId !== 1) { // Simple admin check - user ID 1
+    if (!authData.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -254,7 +267,7 @@ app.get('/admin/stats', async (req, res) => {
     }
 
     const authData = await authResponse.json();
-    if (authData.userId !== 1) {
+    if (!authData.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

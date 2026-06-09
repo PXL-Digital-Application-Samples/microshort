@@ -11,11 +11,13 @@ beforeEach(async () => {
   tmp = path.join(os.tmpdir(), `cfg-${Date.now()}-${Math.random()}.json`);
   await fs.writeFile(tmp, JSON.stringify({ domain: 'https://fixture.test' }));
   process.env.CONFIG_PATH = tmp;
+  process.env.CONFIG_WRITE_TOKEN = 'test-write-token';
   __resetConfigCache();
 });
 
 afterEach(async () => {
   delete process.env.CONFIG_PATH;
+  delete process.env.CONFIG_WRITE_TOKEN;
   await fs.rm(tmp, { force: true });
 });
 
@@ -31,6 +33,7 @@ describe('ConfigService', () => {
     const newDomain = 'https://test.example';
     const response = await request(app)
       .put('/config/domain')
+      .set('X-Service-Token', 'test-write-token')
       .send({ domain: newDomain });
 
     expect(response.status).toBe(200);
@@ -38,5 +41,20 @@ describe('ConfigService', () => {
 
     const getResponse = await request(app).get('/config/domain');
     expect(getResponse.body.domain).toBe(newDomain);
+  });
+
+  it('PUT /config/domain should reject a missing token', async () => {
+    const response = await request(app)
+      .put('/config/domain')
+      .send({ domain: 'https://evil.test' });
+    expect(response.status).toBe(401);
+  });
+
+  it('PUT /config/domain should reject a wrong token', async () => {
+    const response = await request(app)
+      .put('/config/domain')
+      .set('X-Service-Token', 'wrong-token')
+      .send({ domain: 'https://evil.test' });
+    expect(response.status).toBe(401);
   });
 });

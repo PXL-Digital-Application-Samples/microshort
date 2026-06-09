@@ -32,12 +32,12 @@ async function validateAdminKey(req, res, next) {
 
     const data = await response.json();
 
-    // Simple admin check - user ID 1 is admin
-    if (data.userId !== 1) {
+    // Check pre-computed isAdmin property from auth-service
+    if (!data.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
     
-    req.admin = { id: data.userId };
+    req.admin = { id: data.userId, role: data.role };
     next();
   } catch (err) {
     console.error('Admin auth validation error:', err);
@@ -161,7 +161,10 @@ app.put('/admin/config', validateAdminKey, async (req, res) => {
     
     const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Service-Token': process.env.CONFIG_WRITE_TOKEN || ''
+      },
       body: JSON.stringify({ domain }),
       signal: AbortSignal.timeout(2000)
     });

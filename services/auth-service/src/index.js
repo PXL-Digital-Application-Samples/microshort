@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { createUser, findUserByEmail, createApiKey, validateApiKey, getUserApiKeys, revokeApiKey, getAllUsers, getAuthStats } from './db.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -8,8 +9,20 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 
+// Enable trust proxy for rate limiting if behind a reverse proxy
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
+
+// Rate limiter for authentication routes
+const authLimiter = rateLimit({
+  windowMs: parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000)),
+  limit:    parseInt(process.env.LOGIN_RATE_LIMIT_MAX ?? '10'),
+  standardHeaders: 'draft-6',  // separate RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset headers
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later' }
+});
 
 // JWT verification middleware
 const verifyToken = (req, res, next) => {
@@ -34,7 +47,7 @@ app.get('/health', (req, res) => {
 });
 
 // Register new user
-app.post('/auth/register', async (req, res) => {
+app.post('/auth/register', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     
@@ -45,7 +58,7 @@ app.post('/auth/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await createUser(email, passwordHash);
     
-    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, userId: user.id });
   } catch (err) {
     if (err.code === '23505') {
@@ -57,7 +70,7 @@ app.post('/auth/register', async (req, res) => {
 });
 
 // Login
-app.post('/auth/login', async (req, res) => {
+app.post('/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     
@@ -75,7 +88,7 @@ app.post('/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, userId: user.id });
   } catch (err) {
     console.error('Login error:', err);
@@ -90,6 +103,7 @@ app.get('/auth/me', verifyToken, async (req, res) => {
     res.json({ 
       id: user.id,
       email: user.email,
+      role: user.role,
       createdAt: user.created_at
     });
   } catch (err) {
@@ -106,9 +120,9 @@ app.get('/admin/users', async (req, res) => {
       return res.status(401).json({ error: 'API key required' });
     }
 
-    // Check if admin (for now, check if user ID is 1)
+    // Check if admin
     const keyData = await validateApiKey(apiKey);
-    if (!keyData || keyData.user_id !== 1) {
+    if (!keyData || keyData.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -129,7 +143,7 @@ app.get('/admin/stats', async (req, res) => {
     }
 
     const keyData = await validateApiKey(apiKey);
-    if (!keyData || keyData.user_id !== 1) {
+    if (!keyData || keyData.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -175,7 +189,9 @@ app.post('/auth/validate', async (req, res) => {
     res.json({ 
       valid: true, 
       userId: keyData.user_id,
-      keyId: keyData.id 
+      keyId: keyData.id,
+      role: keyData.role,
+      isAdmin: keyData.role === 'admin'
     });
   } catch (err) {
     console.error('Validation error:', err);

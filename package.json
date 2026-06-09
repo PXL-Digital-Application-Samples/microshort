@@ -1,0 +1,18 @@
+{
+  "name": "microshort-integration-tests",
+  "version": "1.0.0",
+  "description": "Integration tests for the microshort stack",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test":          "vitest run",
+    "test:watch":    "vitest",
+    "test:m2":       "vitest run --reporter=verbose tests/integration/m2",
+    "test:rate":     "vitest run tests/integration/m2/rate-limiting.test.js",
+    "test:e2e":      "docker compose down -v && docker compose up -d --build --wait && npm test",
+    "test:e2e:rate": "docker compose -f compose.yml -f compose.test.override.yml down -v && docker compose -f compose.yml -f compose.test.override.yml up -d --build --wait && npm run test:rate"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.3"
+  }
+}

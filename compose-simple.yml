@@ -6,6 +6,7 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
+      - CONFIG_WRITE_TOKEN=${CONFIG_WRITE_TOKEN:-dev-config-token-change-in-production}
 
   # Auth Service
   auth-service:

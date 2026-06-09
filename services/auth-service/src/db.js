@@ -1,5 +1,6 @@
 import postgres from 'postgres';
 import { nanoid } from 'nanoid';
+import { createHash } from 'crypto';
 
 const sql = postgres({
   host: process.env.DB_HOST || 'auth-db',
@@ -12,12 +13,18 @@ const sql = postgres({
   connect_timeout: 10,
 });
 
+function hashKey(key) {
+  return createHash('sha256').update(key).digest('hex');
+}
+
 // Create a new user
 export async function createUser(email, passwordHash) {
+  const [{ count }] = await sql`SELECT COUNT(*) as count FROM users`;
+  const role = parseInt(count) === 0 ? 'admin' : 'user';
   const [user] = await sql`
-    INSERT INTO users (email, password_hash)
-    VALUES (${email}, ${passwordHash})
-    RETURNING id, email, created_at
+    INSERT INTO users (email, password_hash, role)
+    VALUES (${email}, ${passwordHash}, ${role})
+    RETURNING id, email, role, created_at
   `;
   return user;
 }
@@ -25,7 +32,7 @@ export async function createUser(email, passwordHash) {
 // Find user by email
 export async function findUserByEmail(email) {
   const [user] = await sql`
-    SELECT id, email, password_hash, created_at
+    SELECT id, email, password_hash, role, created_at
     FROM users
     WHERE email = ${email}
   `;
@@ -35,23 +42,33 @@ export async function findUserByEmail(email) {
 // Create an API key
 export async function createApiKey(userId, name) {
   const key = `msh_${nanoid(32)}`;
+  const keyHash = hashKey(key);
   const [apiKey] = await sql`
-    INSERT INTO api_keys (user_id, key, name)
-    VALUES (${userId}, ${key}, ${name})
-    RETURNING id, key, name, created_at
+    INSERT INTO api_keys (user_id, key_hash, name)
+    VALUES (${userId}, ${keyHash}, ${name})
+    RETURNING id, name, created_at
   `;
-  return apiKey;
+  // Return the plaintext key exactly once — it is never stored.
+  return { ...apiKey, key };
 }
 
 // Validate an API key
 export async function validateApiKey(key) {
+  const keyHash = hashKey(key);
   const [keyData] = await sql`
-    UPDATE api_keys
-    SET last_used_at = NOW()
-    WHERE key = ${key}
-    RETURNING id, user_id, name
+    SELECT k.id, k.user_id, u.role
+    FROM api_keys k
+    JOIN users u ON u.id = k.user_id
+    WHERE k.key_hash = ${keyHash}
+      AND k.revoked_at IS NULL
   `;
-  return keyData;
+  if (keyData) {
+    // Fire-and-forget: decouple last_used_at from the hot path (CR 2.3).
+    // Validation is now a pure read; the UPDATE happens asynchronously.
+    sql`UPDATE api_keys SET last_used_at = NOW() WHERE id = ${keyData.id}`
+      .catch(err => console.error('last_used_at update failed:', err));
+  }
+  return keyData; // { id, user_id, role } or undefined
 }
 
 // Get user's API keys
@@ -59,7 +76,7 @@ export async function getUserApiKeys(userId) {
   const keys = await sql`
     SELECT id, name, created_at, last_used_at
     FROM api_keys
-    WHERE user_id = ${userId}
+    WHERE user_id = ${userId} AND revoked_at IS NULL
     ORDER BY created_at DESC
   `;
   return keys;
@@ -68,11 +85,12 @@ export async function getUserApiKeys(userId) {
 // Revoke an API key
 export async function revokeApiKey(userId, keyId) {
   const [result] = await sql`
-    DELETE FROM api_keys
-    WHERE id = ${keyId} AND user_id = ${userId}
+    UPDATE api_keys
+    SET revoked_at = NOW()
+    WHERE id = ${keyId} AND user_id = ${userId} AND revoked_at IS NULL
     RETURNING id
   `;
-  return result;
+  return result; // undefined if key not found or already revoked
 }
 
 // Health check for database
