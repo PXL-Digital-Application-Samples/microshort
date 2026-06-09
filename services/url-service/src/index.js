@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { env } from './env.js';
 import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, updateClickCount, getAllUrls, getUrlStats, pool, checkHealth } from './db.js';
 import { nanoid } from 'nanoid';
 import pino from 'pino';
@@ -10,7 +11,7 @@ import promClient from 'prom-client';
 import Redis from 'ioredis';
 import { RedisStore } from 'rate-limit-redis';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+const logger = pino({ level: env.LOG_LEVEL });
 
 const servicePrefix = 'microshort_url_';
 promClient.collectDefaultMetrics({ prefix: servicePrefix });
@@ -37,7 +38,7 @@ const urlCreations = new promClient.Counter({
   labelNames: ['type']    // 'auto' (nanoid), 'custom' (user-specified slug)
 });
 
-const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379', {
+const redis = new Redis(env.REDIS_URL, {
   lazyConnect: true,
   enableOfflineQueue: false,
   maxRetriesPerRequest: 1,
@@ -47,12 +48,12 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379', {
 redis.on('error', err => logger.error({ err }, 'Redis error'));
 
 const app = express();
-const PORT = process.env.PORT || 3002;
-const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3001';
-const CONFIG_SERVICE_URL = process.env.CONFIG_SERVICE_URL || 'http://config-service:3000';
-const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:3005';
-const SERVICE_TOKEN         = process.env.SERVICE_TOKEN          || '';
-const CLICK_SYNC_INTERVAL_MS = parseInt(process.env.CLICK_SYNC_INTERVAL_MS ?? '60000');
+const PORT = env.PORT;
+const AUTH_SERVICE_URL = env.AUTH_SERVICE_URL;
+const CONFIG_SERVICE_URL = env.CONFIG_SERVICE_URL;
+const ANALYTICS_SERVICE_URL = env.ANALYTICS_SERVICE_URL;
+const SERVICE_TOKEN         = env.SERVICE_TOKEN;
+const CLICK_SYNC_INTERVAL_MS = parseInt(env.CLICK_SYNC_INTERVAL_MS);
 
 // Enable trust proxy for rate limiting if behind a reverse proxy
 app.set('trust proxy', 1);
@@ -86,8 +87,8 @@ app.use((req, res, next) => {
 
 // Rate limiter for URL creation
 const urlCreateLimiter = rateLimit({
-  windowMs: parseInt(process.env.URL_RATE_LIMIT_WINDOW_MS ?? String(60 * 1000)),
-  limit:    parseInt(process.env.URL_RATE_LIMIT_MAX ?? '30'),
+  windowMs: parseInt(env.URL_RATE_LIMIT_WINDOW_MS),
+  limit:    parseInt(env.URL_RATE_LIMIT_MAX),
   standardHeaders: 'draft-6',
   legacyHeaders: false,
   passOnStoreError: true,

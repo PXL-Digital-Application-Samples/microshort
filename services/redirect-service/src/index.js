@@ -4,8 +4,9 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import promClient from 'prom-client';
 import Redis from 'ioredis';
+import { env } from './env.js';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+const logger = pino({ level: env.LOG_LEVEL });
 
 const servicePrefix = 'microshort_redirect_';
 promClient.collectDefaultMetrics({ prefix: servicePrefix });
@@ -36,9 +37,9 @@ const cacheMisses = new promClient.Counter({
   help: 'Slug cache misses (fetched from url-service)'
 });
 
-const CACHE_TTL_SECONDS = parseInt(process.env.CACHE_TTL_SECONDS ?? '300');
+const CACHE_TTL_SECONDS = parseInt(env.CACHE_TTL_SECONDS);
 
-const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379', {
+const redis = new Redis(env.REDIS_URL, {
   lazyConnect: true,
   enableOfflineQueue: false,
   maxRetriesPerRequest: 1,
@@ -48,14 +49,14 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379', {
 redis.on('error', err => logger.error({ err }, 'Redis error'));
 
 const app = express();
-const PORT = process.env.PORT || 8080;
-const URL_SERVICE_URL = process.env.URL_SERVICE_URL || 'http://url-service:3002';
-const CONFIG_SERVICE_URL = process.env.CONFIG_SERVICE_URL || 'http://config-service:3000';
-const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:3005';
-const SERVICE_TOKEN         = process.env.SERVICE_TOKEN          || '';
-const IP_HASH_SALT          = process.env.IP_HASH_SALT           || 'dev-ip-hash-salt-change-in-production';
-const ANALYTICS_BATCH_SIZE  = parseInt(process.env.ANALYTICS_BATCH_SIZE  ?? '50');
-const ANALYTICS_FLUSH_MS    = parseInt(process.env.ANALYTICS_FLUSH_MS    ?? '5000');
+const PORT = env.PORT;
+const URL_SERVICE_URL = env.URL_SERVICE_URL;
+const CONFIG_SERVICE_URL = env.CONFIG_SERVICE_URL;
+const ANALYTICS_SERVICE_URL = env.ANALYTICS_SERVICE_URL;
+const SERVICE_TOKEN         = env.SERVICE_TOKEN;
+const IP_HASH_SALT          = env.IP_HASH_SALT;
+const ANALYTICS_BATCH_SIZE  = parseInt(env.ANALYTICS_BATCH_SIZE);
+const ANALYTICS_FLUSH_MS    = parseInt(env.ANALYTICS_FLUSH_MS);
 
 // Enable trust proxy so req.ip reflects the real client when behind a proxy
 app.set('trust proxy', 1);

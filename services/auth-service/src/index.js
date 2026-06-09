@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { env } from './env.js';
 import { createUser, findUserByEmail, createApiKey, validateApiKey, getUserApiKeys, revokeApiKey, getAllUsers, getAuthStats, checkHealth, sql } from './db.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -11,7 +12,7 @@ import promClient from 'prom-client';
 import Redis from 'ioredis';
 import { RedisStore } from 'rate-limit-redis';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+const logger = pino({ level: env.LOG_LEVEL });
 
 const servicePrefix = 'microshort_auth_';
 promClient.collectDefaultMetrics({ prefix: servicePrefix });
@@ -38,7 +39,7 @@ const apiKeyValidations = new promClient.Counter({
   labelNames: ['result']   // 'valid', 'invalid'
 });
 
-const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379', {
+const redis = new Redis(env.REDIS_URL, {
   lazyConnect: true,
   enableOfflineQueue: false,
   maxRetriesPerRequest: 1,
@@ -48,8 +49,8 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379', {
 redis.on('error', err => logger.error({ err }, 'Redis error'));
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const PORT = env.PORT;
+const JWT_SECRET = env.JWT_SECRET;
 
 // Enable trust proxy for rate limiting if behind a reverse proxy
 app.set('trust proxy', 1);
@@ -83,8 +84,8 @@ app.use((req, res, next) => {
 
 // Rate limiter for authentication routes
 const authLimiter = rateLimit({
-  windowMs: parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS ?? String(15 * 60 * 1000)),
-  limit:    parseInt(process.env.LOGIN_RATE_LIMIT_MAX ?? '10'),
+  windowMs: parseInt(env.LOGIN_RATE_LIMIT_WINDOW_MS),
+  limit:    parseInt(env.LOGIN_RATE_LIMIT_MAX),
   standardHeaders: 'draft-6',
   legacyHeaders: false,
   passOnStoreError: true,

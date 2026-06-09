@@ -4,8 +4,9 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import promClient from 'prom-client';
+import { env } from './env.js';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+const logger = pino({ level: env.LOG_LEVEL });
 
 const servicePrefix = 'microshort_admin_';
 promClient.collectDefaultMetrics({ prefix: servicePrefix });
@@ -26,12 +27,12 @@ const httpDuration = new promClient.Histogram({
 });
 
 const app = express();
-const PORT = process.env.PORT || 3003;
-const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL || 'http://auth-service:3001';
-const URL_SERVICE_URL = process.env.URL_SERVICE_URL || 'http://url-service:3002';
-const CONFIG_SERVICE_URL = process.env.CONFIG_SERVICE_URL || 'http://config-service:3000';
-const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:3005';
-const SERVICE_TOKEN         = process.env.SERVICE_TOKEN          || '';
+const PORT = env.PORT;
+const AUTH_SERVICE_URL = env.AUTH_SERVICE_URL;
+const URL_SERVICE_URL = env.URL_SERVICE_URL;
+const CONFIG_SERVICE_URL = env.CONFIG_SERVICE_URL;
+const ANALYTICS_SERVICE_URL = env.ANALYTICS_SERVICE_URL;
+const SERVICE_TOKEN         = env.SERVICE_TOKEN;
 
 app.set('trust proxy', 1);
 
@@ -261,7 +262,7 @@ app.put('/admin/config', validateAdminKey, async (req, res) => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'X-Service-Token': process.env.CONFIG_WRITE_TOKEN || '',
+        'X-Service-Token': env.CONFIG_WRITE_TOKEN,
         'x-request-id': req.id
       },
       body: JSON.stringify({ domain }),

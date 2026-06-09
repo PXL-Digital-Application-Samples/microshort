@@ -1,13 +1,14 @@
 import postgres from 'postgres';
 import { nanoid } from 'nanoid';
 import { createHash } from 'crypto';
+import { env } from './env.js';
 
 export const sql = postgres({
-  host: process.env.DB_HOST || 'auth-db',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'auth',
-  username: process.env.DB_USER || 'authuser',
-  password: process.env.DB_PASSWORD || 'authpass',
+  host: env.DB_HOST,
+  port: parseInt(env.DB_PORT),
+  database: env.DB_NAME,
+  username: env.DB_USER,
+  password: env.DB_PASSWORD,
   max: 10, // connection pool size
   idle_timeout: 20,
   connect_timeout: 10,
