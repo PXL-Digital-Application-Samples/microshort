@@ -1,5 +1,4 @@
 import express from 'express';
-import fetch from 'node-fetch';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -21,7 +20,7 @@ async function getRedirectUrl(slug) {
 
   try {
     // Fetch from url-service
-    const response = await fetch(`${URL_SERVICE_URL}/urls/${slug}`);
+    const response = await fetch(`${URL_SERVICE_URL}/urls/${slug}`, { signal: AbortSignal.timeout(2000) });
     
     if (!response.ok) {
       return null;
@@ -56,7 +55,7 @@ app.get('/health', (req, res) => {
 // Home page (root domain)
 app.get('/', async (req, res) => {
   try {
-    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`);
+    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, { signal: AbortSignal.timeout(2000) });
     const config = await response.json();
     
     res.send(`

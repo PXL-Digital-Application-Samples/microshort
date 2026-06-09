@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import fetch from 'node-fetch';
 import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, incrementClicks, getAllUrls, getUrlStats } from './db.js';
 import { nanoid } from 'nanoid';
 
@@ -24,7 +23,7 @@ async function getDomain() {
   }
   
   try {
-    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`);
+    const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, { signal: AbortSignal.timeout(2000) });
     const data = await response.json();
     cachedDomain = data.domain;
     cacheTime = Date.now();
@@ -47,13 +46,14 @@ async function validateApiKey(req, res, next) {
     const response = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey })
+      body: JSON.stringify({ apiKey }),
+      signal: AbortSignal.timeout(2000)
     });
-    
+
     if (!response.ok) {
       return res.status(401).json({ error: 'Invalid API key' });
     }
-    
+
     const data = await response.json();
     req.user = { id: data.userId };
     next();
@@ -200,13 +200,14 @@ app.get('/admin/urls', async (req, res) => {
     const authResponse = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey })
+      body: JSON.stringify({ apiKey }),
+      signal: AbortSignal.timeout(2000)
     });
-    
+
     if (!authResponse.ok) {
       return res.status(401).json({ error: 'Invalid API key' });
     }
-    
+
     const authData = await authResponse.json();
     if (authData.userId !== 1) { // Simple admin check - user ID 1
       return res.status(403).json({ error: 'Admin access required' });
@@ -244,13 +245,14 @@ app.get('/admin/stats', async (req, res) => {
     const authResponse = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey })
+      body: JSON.stringify({ apiKey }),
+      signal: AbortSignal.timeout(2000)
     });
-    
+
     if (!authResponse.ok) {
       return res.status(401).json({ error: 'Invalid API key' });
     }
-    
+
     const authData = await authResponse.json();
     if (authData.userId !== 1) {
       return res.status(403).json({ error: 'Admin access required' });

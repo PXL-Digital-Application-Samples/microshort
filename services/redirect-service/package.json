@@ -9,7 +9,6 @@
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "node-fetch": "^3.3.2"
+    "express": "^4.21.2"
   }
 }
