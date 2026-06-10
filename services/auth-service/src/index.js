@@ -240,7 +240,7 @@ app.post('/auth/login', authLimiter, async (req, res) => {
 });
 
 // Refresh access token
-app.post('/auth/refresh', async (req, res) => {
+app.post('/auth/refresh', authLimiter, async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
     return res.status(400).json({ error: 'Refresh token required' });
@@ -265,6 +265,9 @@ app.post('/auth/refresh', async (req, res) => {
 app.get('/auth/me', verifyToken, async (req, res) => {
   try {
     const user = await findUserByEmail(req.user.email);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
     res.json({ 
       id: user.id,
       email: user.email,

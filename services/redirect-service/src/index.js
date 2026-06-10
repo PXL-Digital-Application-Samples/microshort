@@ -171,7 +171,7 @@ async function flushEvents() {
   const batch = eventBuffer.splice(0, 1000);
   logger.info({ job: 'analytics-flush', jobId, batchSize: batch.length }, 'Flushing analytics events');
   try {
-    await fetch(`${ANALYTICS_SERVICE_URL}/events:batch`, {
+    const res = await fetch(`${ANALYTICS_SERVICE_URL}/events:batch`, {
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -181,9 +181,13 @@ async function flushEvents() {
       body:    JSON.stringify(batch),
       signal:  AbortSignal.timeout(5000)
     });
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status}`);
+    }
     logger.info({ job: 'analytics-flush', jobId }, 'Flush complete');
   } catch (err) {
-    logger.error({ job: 'analytics-flush', jobId, err }, 'Analytics flush failed');
+    eventBuffer.unshift(...batch);
+    logger.error({ job: 'analytics-flush', jobId, err }, 'Analytics flush failed, batch returned to buffer');
   }
 }
 
@@ -247,8 +251,8 @@ app.get('/:slug', redirectLimiter, async (req, res) => {
   const { slug } = req.params;
   
   // Validate slug format
-  if (!slug || slug.length > 50) {
-    return res.status(404).send('Not found');
+  if (!slug || slug.length > 50 || !/^[a-zA-Z0-9_-]+$/.test(slug)) {
+    return res.status(400).send('Invalid slug format');
   }
   
   // Get redirect URL

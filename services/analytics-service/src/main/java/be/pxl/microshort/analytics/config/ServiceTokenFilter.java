@@ -45,7 +45,8 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
                                     FilterChain chain) throws ServletException, IOException {
-        if (req.getRequestURI().startsWith("/actuator")) {
+        if (req.getRequestURI().equals("/actuator/health") || 
+            req.getRequestURI().startsWith("/actuator/health/")) {
             chain.doFilter(req, res);
             return;
         }

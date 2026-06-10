@@ -225,7 +225,10 @@ app.get('/admin/users', validateAdminKey, async (req, res) => {
 app.get('/admin/urls', validateAdminKey, async (req, res) => {
   try {
     const response = await fetch(`${URL_SERVICE_URL}/admin/urls`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'], 'x-request-id': req.id },
+      headers: {
+        'X-Service-Token': ADMIN_SERVICE_TOKEN,
+        'x-request-id': req.id
+      },
       signal: AbortSignal.timeout(2000)
     });
 
@@ -251,7 +254,7 @@ app.put('/admin/urls/:slug', validateAdminKey, async (req, res) => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': req.headers['x-api-key'],
+        'X-Service-Token': ADMIN_SERVICE_TOKEN,
         'x-request-id': req.id
       },
       body: JSON.stringify({ url }),

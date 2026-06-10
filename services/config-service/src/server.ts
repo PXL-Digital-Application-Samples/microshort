@@ -44,19 +44,21 @@ const env = cleanEnv(process.env, {
 const ajv = new Ajv();
 addFormats(ajv);
 
-const schema = {
-  ...configSchema,
-  properties: {
-    ...configSchema.properties,
-    domain: {
-      ...configSchema.properties.domain,
-      ...((process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') && {
-        pattern: '^https://'
-      })
+function getValidateConfig() {
+  const schema = {
+    ...configSchema,
+    properties: {
+      ...configSchema.properties,
+      domain: {
+        ...configSchema.properties.domain,
+        ...((process.env.NODE_ENV === 'production') && {
+          pattern: '^https://'
+        })
+      }
     }
-  }
-};
-const validateConfig = ajv.compile(schema);
+  };
+  return ajv.compile(schema);
+}
 
 // In-memory config state. Seeded from env var at startup.
 // PUT /config/domain mutates this at runtime (ephemeral — resets on restart).
@@ -156,6 +158,7 @@ app.put('/config/domain', (req: Request, res: Response): void => {
   }
 
   const { domain } = req.body;
+  const validateConfig = getValidateConfig();
   if (!validateConfig({ domain })) {
     res.status(400).json({ error: 'Validation failed', details: validateConfig.errors });
     return;

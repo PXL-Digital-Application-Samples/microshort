@@ -20,12 +20,14 @@ export async function createUrl(userId, longUrl, slug) {
     [userId, longUrl, slug]
   );
   
-  const [rows] = await pool.execute(
-    'SELECT * FROM urls WHERE id = ?',
-    [result.insertId]
-  );
-  
-  return rows[0];
+  return {
+    id: result.insertId,
+    user_id: userId,
+    long_url: longUrl,
+    slug: slug,
+    clicks: 0,
+    created_at: new Date()
+  };
 }
 
 // Get URL by slug
@@ -62,11 +64,10 @@ export async function updateUrl(urlId, newLongUrl) {
     'UPDATE urls SET long_url = ? WHERE id = ?',
     [newLongUrl, urlId]
   );
-  const [rows] = await pool.execute(
-    'SELECT * FROM urls WHERE id = ?',
-    [urlId]
-  );
-  return rows[0];
+  return {
+    id: urlId,
+    long_url: newLongUrl
+  };
 }
 
 // Updates the eventually-consistent click count cache. Called by the
@@ -110,8 +111,12 @@ export async function getAllUrls({ cursor, limit = 50 } = {}) {
 }
 
 export async function searchUrls(q) {
-  const prefix = `${q}%`;
-  const phrase = `"${q}"`;
+  const escapedQ = q.replace(/[\\%_]/g, '\\$&');
+  const prefix = `${escapedQ}%`;
+  
+  const cleanPhrase = q.replace(/[+\><~*"()]/g, '');
+  const phrase = `"${cleanPhrase}"`;
+  
   const [rows] = await pool.execute(
     `SELECT * FROM urls
      WHERE slug LIKE ?

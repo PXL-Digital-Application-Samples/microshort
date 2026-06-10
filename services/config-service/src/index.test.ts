@@ -43,12 +43,26 @@ describe('ConfigService', () => {
     expect(response.status).toBe(401);
   });
 
-  it('PUT /config/domain should reject http:// domains in non-development environments', async () => {
-    const response = await request(app)
+  it('PUT /config/domain should reject http:// domains in production environment but allow them in test environment', async () => {
+    // 1. In test environment, it should allow http:// domains
+    const testResponse = await request(app)
       .put('/config/domain')
       .set('X-Service-Token', 'test-write-token')
       .send({ domain: 'http://insecure.example' });
-    expect(response.status).toBe(400);
+    expect(testResponse.status).toBe(200);
+
+    // 2. In production environment, it should reject http:// domains
+    const originalEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      const prodResponse = await request(app)
+        .put('/config/domain')
+        .set('X-Service-Token', 'test-write-token')
+        .send({ domain: 'http://insecure.example' });
+      expect(prodResponse.status).toBe(400);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
   });
 
   it('__resetConfigCache should not reset domain in production mode', async () => {
