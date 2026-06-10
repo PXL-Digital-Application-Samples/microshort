@@ -1,7 +1,0 @@
-be/pxl/microshort/analytics/AnalyticsApplication.class
-be/pxl/microshort/analytics/model/ClickEvent.class
-be/pxl/microshort/analytics/config/CorrelationIdFilter.class
-be/pxl/microshort/analytics/config/ServiceTokenFilter.class
-be/pxl/microshort/analytics/controller/StatsController.class
-be/pxl/microshort/analytics/controller/EventController.class
-be/pxl/microshort/analytics/repository/ClickHouseRepository.class
