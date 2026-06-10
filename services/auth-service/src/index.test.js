@@ -149,4 +149,25 @@ describe('auth-service', () => {
       expect(res.status).toBe(200);
     });
   });
+
+  describe('Swagger UI', () => {
+    it('GET /docs/ serves the Swagger UI HTML', async () => {
+      const res = await request(app).get('/docs/');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/html/);
+      expect(res.text).toContain('swagger-ui');
+    });
+
+    it('GET /docs/swagger-ui-init.js exposes the full spec', async () => {
+      const res = await request(app).get('/docs/swagger-ui-init.js');
+      expect(res.status).toBe(200);
+      // Verify key routes from each endpoint group are in the spec
+      expect(res.text).toContain('/auth/login');
+      expect(res.text).toContain('/auth/register');
+      expect(res.text).toContain('/auth/api-keys');
+      expect(res.text).toContain('/auth/validate');
+      expect(res.text).toContain('/admin/users');
+      expect(res.text).toContain('/internal/admin/stats');
+    });
+  });
 });

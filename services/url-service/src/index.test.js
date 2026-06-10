@@ -126,4 +126,22 @@ describe('url-service', () => {
       expect(res.body.slug).toBe('mine');
     });
   });
+
+  describe('Swagger UI', () => {
+    it('GET /docs/ serves the Swagger UI HTML', async () => {
+      const res = await request(app).get('/docs/');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/html/);
+      expect(res.text).toContain('swagger-ui');
+    });
+
+    it('GET /docs/swagger-ui-init.js exposes the full spec', async () => {
+      const res = await request(app).get('/docs/swagger-ui-init.js');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('/urls');
+      expect(res.text).toContain('/urls/{slug}');
+      expect(res.text).toContain('/admin/urls');
+      expect(res.text).toContain('/internal/admin/stats');
+    });
+  });
 });

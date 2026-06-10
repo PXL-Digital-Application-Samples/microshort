@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.anEmptyMap;
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -107,5 +108,42 @@ public class SecurityAndControllerTests {
                 .content("[]"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", anEmptyMap()));
+    }
+
+    // --- OpenAPI spec tests ---
+
+    @Test
+    public void openApiSpec_isAccessibleWithoutAuth() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON));
+    }
+
+    @Test
+    public void openApiSpec_containsExpectedPaths() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/events:batch']").exists())
+                .andExpect(jsonPath("$.paths['/events']").exists())
+                .andExpect(jsonPath("$.paths['/stats/overview']").exists())
+                .andExpect(jsonPath("$.paths['/stats/top']").exists())
+                .andExpect(jsonPath("$.paths['/stats/counts']").exists());
+    }
+
+    @Test
+    public void openApiSpec_definesServiceTokenSecurityScheme() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.securitySchemes.serviceToken").exists())
+                .andExpect(jsonPath("$.components.securitySchemes.serviceToken.in").value("header"))
+                .andExpect(jsonPath("$.components.securitySchemes.serviceToken.name").value("X-Service-Token"));
+    }
+
+    @Test
+    public void docsPath_isNotBlockedBySecurityFilter() throws Exception {
+        // SecurityFilter must pass /docs* through so Swagger UI can load in a browser
+        int statusCode = mockMvc.perform(get("/docs")).andReturn().getResponse().getStatus();
+        org.junit.jupiter.api.Assertions.assertNotEquals(401, statusCode,
+            "/docs must not be blocked by SecurityFilter");
     }
 }

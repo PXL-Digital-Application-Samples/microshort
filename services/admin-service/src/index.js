@@ -5,6 +5,12 @@ import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import promClient from 'prom-client';
 import { env } from './env.js';
+import swaggerUi from 'swagger-ui-express';
+import swaggerJsdoc from 'swagger-jsdoc';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const logger = pino({ level: env.LOG_LEVEL });
 
@@ -71,11 +77,11 @@ app.use((req, res, next) => {
 // Validate admin API key middleware
 async function validateAdminKey(req, res, next) {
   const apiKey = req.headers['x-api-key'];
-  
+
   if (!apiKey) {
     return res.status(401).json({ error: 'API key required' });
   }
-  
+
   try {
     const response = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
@@ -97,7 +103,7 @@ async function validateAdminKey(req, res, next) {
     if (!data.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
-    
+
     req.admin = { id: data.userId, role: data.role };
     next();
   } catch (err) {
@@ -106,12 +112,38 @@ async function validateAdminKey(req, res, next) {
   }
 }
 
-// Health check (liveness)
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     summary: Liveness check
+ *     tags: [Observability]
+ *     responses:
+ *       200:
+ *         description: Service is alive
+ */
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-// Readiness check
+/**
+ * @openapi
+ * /ready:
+ *   get:
+ *     summary: Readiness check
+ *     tags: [Observability]
+ *     responses:
+ *       200:
+ *         description: Service is ready
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ready
+ */
 app.get('/ready', (req, res) => res.json({ status: 'ready' }));
 
 // Metrics
@@ -140,7 +172,64 @@ async function fetchUpstream(url, options, log) {
   }
 }
 
-// Get dashboard overview
+/**
+ * @openapi
+ * /admin/dashboard:
+ *   get:
+ *     summary: Get dashboard overview (aggregated from all services)
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     responses:
+ *       200:
+ *         description: Dashboard data. Partial responses are returned when upstream services are degraded.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 degraded:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   description: Names of services that could not be reached
+ *                 users:
+ *                   type: object
+ *                   nullable: true
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     recentSignups:
+ *                       type: integer
+ *                     totalApiKeys:
+ *                       type: integer
+ *                 urls:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                       nullable: true
+ *                     recentUrls:
+ *                       type: integer
+ *                       nullable: true
+ *                     totalClicks:
+ *                       type: integer
+ *                       nullable: true
+ *                     topUrls:
+ *                       type: array
+ *                       nullable: true
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           slug:
+ *                             type: string
+ *                           clicks:
+ *                             type: integer
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
   // Serve cached response if still fresh
   if (dashboardCache && Date.now() < dashboardCacheExpiry) {
@@ -201,18 +290,55 @@ app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
   res.json(response);
 });
 
-// List all users
+/**
+ * @openapi
+ * /admin/users:
+ *   get:
+ *     summary: List all users
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: integer
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Paginated user list (proxied from auth-service)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 nextCursor:
+ *                   type: integer
+ *                   nullable: true
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/users', validateAdminKey, async (req, res) => {
   try {
     const response = await fetch(`${AUTH_SERVICE_URL}/admin/users`, {
       headers: { 'X-API-Key': req.headers['x-api-key'], 'x-request-id': req.id },
       signal: AbortSignal.timeout(2000)
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to fetch users');
     }
-    
+
     const data = await response.json();
     res.json(data);
   } catch (err) {
@@ -221,7 +347,34 @@ app.get('/admin/users', validateAdminKey, async (req, res) => {
   }
 });
 
-// List all URLs
+/**
+ * @openapi
+ * /admin/urls:
+ *   get:
+ *     summary: List all short URLs
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     responses:
+ *       200:
+ *         description: Paginated URL list (proxied from url-service)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 urls:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 nextCursor:
+ *                   type: integer
+ *                   nullable: true
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/urls', validateAdminKey, async (req, res) => {
   try {
     const response = await fetch(`${URL_SERVICE_URL}/admin/urls`, {
@@ -244,12 +397,48 @@ app.get('/admin/urls', validateAdminKey, async (req, res) => {
   }
 });
 
-// Update a URL
+/**
+ * @openapi
+ * /admin/urls/{slug}:
+ *   put:
+ *     summary: Update the long URL for a slug
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [url]
+ *             properties:
+ *               url:
+ *                 type: string
+ *                 format: uri
+ *     responses:
+ *       200:
+ *         description: URL updated
+ *       400:
+ *         description: URL missing or invalid
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ *       404:
+ *         description: Slug not found
+ */
 app.put('/admin/urls/:slug', validateAdminKey, async (req, res) => {
   try {
     const { slug } = req.params;
     const { url } = req.body;
-    
+
     const response = await fetch(`${URL_SERVICE_URL}/urls/${slug}`, {
       method: 'PUT',
       headers: {
@@ -274,6 +463,24 @@ app.put('/admin/urls/:slug', validateAdminKey, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /admin/users/{userId}:
+ *   get:
+ *     summary: Get a user by ID (not yet implemented)
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       501:
+ *         description: Not implemented
+ */
 app.get('/admin/users/:userId', validateAdminKey, async (req, res) => {
   res.status(501).json({
     error: 'Not implemented',
@@ -282,15 +489,43 @@ app.get('/admin/users/:userId', validateAdminKey, async (req, res) => {
   });
 });
 
-// Update configuration
+/**
+ * @openapi
+ * /admin/config:
+ *   put:
+ *     summary: Update the short URL domain (ephemeral — resets on restart)
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [domain]
+ *             properties:
+ *               domain:
+ *                 type: string
+ *                 example: https://sho.rt
+ *     responses:
+ *       200:
+ *         description: Domain updated (persists only until config-service restarts)
+ *       400:
+ *         description: Domain missing
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.put('/admin/config', validateAdminKey, async (req, res) => {
   try {
     const { domain } = req.body;
-    
+
     if (!domain) {
       return res.status(400).json({ error: 'Domain required' });
     }
-    
+
     const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, {
       method: 'PUT',
       headers: {
@@ -301,11 +536,11 @@ app.put('/admin/config', validateAdminKey, async (req, res) => {
       body: JSON.stringify({ domain }),
       signal: AbortSignal.timeout(2000)
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to update config');
     }
-    
+
     const data = await response.json();
     res.json(data);
   } catch (err) {
@@ -314,7 +549,30 @@ app.put('/admin/config', validateAdminKey, async (req, res) => {
   }
 });
 
-// Get current configuration
+/**
+ * @openapi
+ * /admin/config:
+ *   get:
+ *     summary: Get the current domain configuration
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     responses:
+ *       200:
+ *         description: Current configuration
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 domain:
+ *                   type: string
+ *                   example: https://sho.rt
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/config', validateAdminKey, async (req, res) => {
   try {
     const response = await fetch(`${CONFIG_SERVICE_URL}/config/domain`, {
@@ -325,7 +583,7 @@ app.get('/admin/config', validateAdminKey, async (req, res) => {
     if (!response.ok) {
       throw new Error('Failed to fetch config');
     }
-    
+
     const data = await response.json();
     res.json(data);
   } catch (err) {
@@ -334,15 +592,48 @@ app.get('/admin/config', validateAdminKey, async (req, res) => {
   }
 });
 
-// Search URLs
+/**
+ * @openapi
+ * /admin/search/urls:
+ *   get:
+ *     summary: Search short URLs by slug or long URL substring
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Search query
+ *     responses:
+ *       200:
+ *         description: Matching URLs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 urls:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       400:
+ *         description: Search query missing
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/search/urls', validateAdminKey, async (req, res) => {
   try {
     const { q } = req.query;
-    
+
     if (!q) {
       return res.status(400).json({ error: 'Search query required' });
     }
-    
+
     const response = await fetch(
       `${URL_SERVICE_URL}/admin/urls?q=${encodeURIComponent(q)}`,
       {
@@ -350,11 +641,11 @@ app.get('/admin/search/urls', validateAdminKey, async (req, res) => {
         signal: AbortSignal.timeout(2000)
       }
     );
-    
+
     if (!response.ok) {
       throw new Error('Failed to search URLs');
     }
-    
+
     const data = await response.json();
     res.json(data);
   } catch (err) {
@@ -363,7 +654,38 @@ app.get('/admin/search/urls', validateAdminKey, async (req, res) => {
   }
 });
 
-// System health check
+/**
+ * @openapi
+ * /admin/health/services:
+ *   get:
+ *     summary: Check health of all downstream services
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     responses:
+ *       200:
+ *         description: Health status of each service
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 services:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       service:
+ *                         type: string
+ *                         example: auth
+ *                       status:
+ *                         type: string
+ *                         enum: [healthy, unhealthy, unreachable]
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/health/services', validateAdminKey, async (req, res) => {
   try {
     const services = [
@@ -372,7 +694,7 @@ app.get('/admin/health/services', validateAdminKey, async (req, res) => {
       { name: 'config',    url: `${CONFIG_SERVICE_URL}/health` },
       { name: 'analytics', url: `${ANALYTICS_SERVICE_URL}/actuator/health/liveness` }
     ];
-    
+
     const healthChecks = await Promise.all(
       services.map(async (service) => {
         try {
@@ -394,13 +716,33 @@ app.get('/admin/health/services', validateAdminKey, async (req, res) => {
         }
       })
     );
-    
+
     res.json({ services: healthChecks });
   } catch (err) {
     req.log.error({ err }, 'Health check error');
     res.status(500).json({ error: 'Health check failed' });
   }
 });
+
+const swaggerSpec = swaggerJsdoc({
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Admin Service API',
+      version: '1.0.0',
+      description: 'Aggregation API for the microshort admin dashboard. All endpoints require an admin API key.'
+    },
+    servers: [{ url: `http://localhost:${PORT}` }],
+    components: {
+      securitySchemes: {
+        apiKey: { type: 'apiKey', in: 'header', name: 'X-API-Key' }
+      }
+    }
+  },
+  apis: [join(__dirname, 'index.js')]
+});
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 let server;
 if (process.env.NODE_ENV !== 'test') {

@@ -11,6 +11,12 @@ import promClient from 'prom-client';
 import Redis from 'ioredis';
 import { RedisStore } from 'rate-limit-redis';
 import logger from './logger.js';
+import swaggerUi from 'swagger-ui-express';
+import swaggerJsdoc from 'swagger-jsdoc';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const servicePrefix = 'microshort_auth_';
 promClient.collectDefaultMetrics({ prefix: servicePrefix });
@@ -170,12 +176,40 @@ const requireServiceToken = (req, res, next) => {
   next();
 };
 
-// Health check (liveness)
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     summary: Liveness check
+ *     tags: [Observability]
+ *     responses:
+ *       200:
+ *         description: Service is alive
+ */
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-// Readiness check
+/**
+ * @openapi
+ * /ready:
+ *   get:
+ *     summary: Readiness check
+ *     tags: [Observability]
+ *     responses:
+ *       200:
+ *         description: Service is ready
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ready
+ *       503:
+ *         description: Database unavailable
+ */
 app.get('/ready', async (req, res) => {
   const ok = await checkHealth();
   res.status(ok ? 200 : 503).json({ status: ok ? 'ready' : 'unavailable' });
@@ -187,18 +221,60 @@ app.get('/metrics', async (req, res) => {
   res.end(await promClient.register.metrics());
 });
 
-// Register new user
+/**
+ * @openapi
+ * /auth/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               password:
+ *                 type: string
+ *                 minLength: 1
+ *                 example: "s3cr3t"
+ *     responses:
+ *       200:
+ *         description: Registration successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ *                 userId:
+ *                   type: integer
+ *       400:
+ *         description: Email or password missing
+ *       409:
+ *         description: Email already in use
+ *       429:
+ *         description: Rate limit exceeded
+ */
 app.post('/auth/register', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await createUser(email, passwordHash);
-    
+
     const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
     const refreshToken = jwt.sign({ userId: user.id, type: 'refresh' }, JWT_SECRET, { expiresIn: env.REFRESH_TOKEN_EXPIRES_IN });
     res.json({ token, refreshToken, userId: user.id });
@@ -211,11 +287,50 @@ app.post('/auth/register', authLimiter, async (req, res) => {
   }
 });
 
-// Login
+/**
+ * @openapi
+ * /auth/login:
+ *   post:
+ *     summary: Log in and obtain JWT tokens
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ *                 userId:
+ *                   type: integer
+ *       400:
+ *         description: Email or password missing
+ *       401:
+ *         description: Invalid credentials
+ *       429:
+ *         description: Rate limit exceeded
+ */
 app.post('/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' });
     }
@@ -239,7 +354,39 @@ app.post('/auth/login', authLimiter, async (req, res) => {
   }
 });
 
-// Refresh access token
+/**
+ * @openapi
+ * /auth/refresh:
+ *   post:
+ *     summary: Exchange a refresh token for a new access token
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [refreshToken]
+ *             properties:
+ *               refreshToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: New access token issued
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token:
+ *                   type: string
+ *       400:
+ *         description: Refresh token missing or wrong type
+ *       401:
+ *         description: Invalid or expired refresh token
+ *       429:
+ *         description: Rate limit exceeded
+ */
 app.post('/auth/refresh', authLimiter, async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) {
@@ -261,14 +408,42 @@ app.post('/auth/refresh', authLimiter, async (req, res) => {
   }
 });
 
-// Get user profile
+/**
+ * @openapi
+ * /auth/me:
+ *   get:
+ *     summary: Get the current user's profile
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User profile
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                 email:
+ *                   type: string
+ *                 role:
+ *                   type: string
+ *                   example: user
+ *                 createdAt:
+ *                   type: string
+ *                   format: date-time
+ *       401:
+ *         description: Missing or invalid JWT
+ */
 app.get('/auth/me', verifyToken, async (req, res) => {
   try {
     const user = await findUserByEmail(req.user.email);
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
     }
-    res.json({ 
+    res.json({
       id: user.id,
       email: user.email,
       role: user.role,
@@ -280,7 +455,55 @@ app.get('/auth/me', verifyToken, async (req, res) => {
   }
 });
 
-// Admin: Get all users (requires admin API key)
+/**
+ * @openapi
+ * /admin/users:
+ *   get:
+ *     summary: List all users (admin)
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: integer
+ *         description: Pagination cursor (user ID offset)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Paginated user list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       email:
+ *                         type: string
+ *                       role:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                 nextCursor:
+ *                   type: integer
+ *                   nullable: true
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/users', requireAdmin, async (req, res) => {
   try {
     const cursor = req.query.cursor ? parseInt(req.query.cursor) : undefined;
@@ -293,7 +516,33 @@ app.get('/admin/users', requireAdmin, async (req, res) => {
   }
 });
 
-// Admin: Get auth stats
+/**
+ * @openapi
+ * /admin/stats:
+ *   get:
+ *     summary: Get auth statistics (admin)
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     responses:
+ *       200:
+ *         description: Auth service statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalUsers:
+ *                   type: integer
+ *                 recentUsers:
+ *                   type: integer
+ *                 totalApiKeys:
+ *                   type: integer
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/stats', requireAdmin, async (req, res) => {
   try {
     const stats = await getAuthStats();
@@ -304,7 +553,31 @@ app.get('/admin/stats', requireAdmin, async (req, res) => {
   }
 });
 
-// Internal Admin: Get auth stats (requires service token)
+/**
+ * @openapi
+ * /internal/admin/stats:
+ *   get:
+ *     summary: Get auth statistics (internal service-to-service)
+ *     tags: [Internal]
+ *     security:
+ *       - serviceToken: []
+ *     responses:
+ *       200:
+ *         description: Auth service statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalUsers:
+ *                   type: integer
+ *                 recentUsers:
+ *                   type: integer
+ *                 totalApiKeys:
+ *                   type: integer
+ *       401:
+ *         description: Service token missing or invalid
+ */
 app.get('/internal/admin/stats', requireServiceToken, async (req, res) => {
   try {
     const stats = await getAuthStats();
@@ -315,16 +588,49 @@ app.get('/internal/admin/stats', requireServiceToken, async (req, res) => {
   }
 });
 
-// Generate API key
+/**
+ * @openapi
+ * /auth/api-keys:
+ *   post:
+ *     summary: Generate a new API key
+ *     tags: [API Keys]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: My CLI key
+ *     responses:
+ *       200:
+ *         description: API key created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 apiKey:
+ *                   type: string
+ *                 keyId:
+ *                   type: integer
+ *                 name:
+ *                   type: string
+ *       401:
+ *         description: Missing or invalid JWT
+ */
 app.post('/auth/api-keys', verifyToken, async (req, res) => {
   try {
     const { name } = req.body;
     const apiKey = await createApiKey(req.user.userId, name || 'Unnamed key');
-    
-    res.json({ 
+
+    res.json({
       apiKey: apiKey.key,
       keyId: apiKey.id,
-      name: apiKey.name 
+      name: apiKey.name
     });
   } catch (err) {
     req.log.error({ err }, 'API key generation error');
@@ -332,11 +638,52 @@ app.post('/auth/api-keys', verifyToken, async (req, res) => {
   }
 });
 
-// Validate API key (for other services to use)
+/**
+ * @openapi
+ * /auth/validate:
+ *   post:
+ *     summary: Validate an API key (used by other services)
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [apiKey]
+ *             properties:
+ *               apiKey:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: API key is valid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 valid:
+ *                   type: boolean
+ *                   example: true
+ *                 userId:
+ *                   type: integer
+ *                 keyId:
+ *                   type: integer
+ *                 role:
+ *                   type: string
+ *                 isAdmin:
+ *                   type: boolean
+ *       400:
+ *         description: apiKey field missing
+ *       401:
+ *         description: API key is invalid or revoked
+ *       429:
+ *         description: Rate limit exceeded
+ */
 app.post('/auth/validate', validateLimiter, async (req, res) => {
   try {
     const { apiKey } = req.body;
-    
+
     if (!apiKey) {
       return res.status(400).json({ error: 'API key required' });
     }
@@ -348,8 +695,8 @@ app.post('/auth/validate', validateLimiter, async (req, res) => {
     }
 
     apiKeyValidations.inc({ result: 'valid' });
-    res.json({ 
-      valid: true, 
+    res.json({
+      valid: true,
       userId: keyData.user_id,
       keyId: keyData.id,
       role: keyData.role,
@@ -361,11 +708,45 @@ app.post('/auth/validate', validateLimiter, async (req, res) => {
   }
 });
 
-// List user's API keys
+/**
+ * @openapi
+ * /auth/api-keys:
+ *   get:
+ *     summary: List the current user's API keys
+ *     tags: [API Keys]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of API key metadata (key values are not returned)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 keys:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       name:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                       lastUsedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         nullable: true
+ *       401:
+ *         description: Missing or invalid JWT
+ */
 app.get('/auth/api-keys', verifyToken, async (req, res) => {
   try {
     const keys = await getUserApiKeys(req.user.userId);
-    
+
     // Don't return the actual key values, just metadata
     const safeKeys = keys.map(k => ({
       id: k.id,
@@ -373,7 +754,7 @@ app.get('/auth/api-keys', verifyToken, async (req, res) => {
       createdAt: k.created_at,
       lastUsedAt: k.last_used_at
     }));
-    
+
     res.json({ keys: safeKeys });
   } catch (err) {
     req.log.error({ err }, 'List keys error');
@@ -381,26 +762,81 @@ app.get('/auth/api-keys', verifyToken, async (req, res) => {
   }
 });
 
-// Revoke an API key
+/**
+ * @openapi
+ * /auth/api-keys/{keyId}:
+ *   delete:
+ *     summary: Revoke an API key
+ *     tags: [API Keys]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: keyId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: API key revoked
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: API key revoked
+ *                 keyId:
+ *                   type: integer
+ *       400:
+ *         description: Invalid key ID
+ *       401:
+ *         description: Missing or invalid JWT
+ *       404:
+ *         description: API key not found or not owned by caller
+ */
 app.delete('/auth/api-keys/:keyId', verifyToken, async (req, res) => {
   try {
     const keyId = parseInt(req.params.keyId);
-    
+
     if (isNaN(keyId)) {
       return res.status(400).json({ error: 'Invalid key ID' });
     }
-    
+
     const result = await revokeApiKey(req.user.userId, keyId);
     if (!result) {
       return res.status(404).json({ error: 'API key not found' });
     }
-    
+
     res.json({ message: 'API key revoked', keyId: result.id });
   } catch (err) {
     req.log.error({ err }, 'Revoke key error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+const swaggerSpec = swaggerJsdoc({
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Auth Service API',
+      version: '1.0.0',
+      description: 'User registration, login, JWT issuance, and API key management.'
+    },
+    servers: [{ url: `http://localhost:${PORT}` }],
+    components: {
+      securitySchemes: {
+        bearerAuth:   { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+        apiKey:       { type: 'apiKey', in: 'header', name: 'X-API-Key' },
+        serviceToken: { type: 'apiKey', in: 'header', name: 'X-Service-Token' }
+      }
+    }
+  },
+  apis: [join(__dirname, 'index.js')]
+});
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 let server;
 if (process.env.NODE_ENV !== 'test') {

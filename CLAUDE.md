@@ -69,12 +69,12 @@ Services and ports:
 | Service | Port | Stack | Datastore | Role |
 | --- | --- | --- | --- | --- |
 | config-service | 3000 | Node/TypeScript | env var | Single source of shared config (the public `domain`). Swagger docs at `/docs`. |
-| auth-service | 3001 | Node | PostgreSQL | User registration/login (JWT) and API-key issuance/validation. |
-| url-service | 3002 | Node | MySQL | Create/manage short URLs and slugs; system of record for slug → long URL. |
+| auth-service | 3001 | Node | PostgreSQL | User registration/login (JWT) and API-key issuance/validation. Swagger docs at `/docs`. |
+| url-service | 3002 | Node | MySQL | Create/manage short URLs and slugs; system of record for slug → long URL. Swagger docs at `/docs`. |
 | redirect-service | 8080 | Node | Redis (cache) | Public-facing. Resolves slugs via url-service, caches in Redis, returns 302. |
-| admin-service | 3003 | Node | none | Aggregation API — pulls from auth/url/analytics/config. CORS-enabled. |
+| admin-service | 3003 | Node | none | Aggregation API — pulls from auth/url/analytics/config. CORS-enabled. Swagger docs at `/docs`. |
 | admin-ui | 3004 | VanJS + htm | none | Zero-build-tool dashboard. `server.js` serves static files + `/config.js`. |
-| analytics-service | 3005 | Java (Spring Boot) | ClickHouse | Ingests click events from redirect-service, serves stats to admin/url. |
+| analytics-service | 3005 | Java (Spring Boot) | ClickHouse | Ingests click events from redirect-service, serves stats to admin/url. Swagger docs at `/docs`. |
 
 Key rules:
 - **No service talks to another service's database.** Cross-service data only via HTTP APIs.

@@ -11,6 +11,12 @@ import promClient from 'prom-client';
 import Redis from 'ioredis';
 import { RedisStore } from 'rate-limit-redis';
 import logger from './logger.js';
+import swaggerUi from 'swagger-ui-express';
+import swaggerJsdoc from 'swagger-jsdoc';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const servicePrefix = 'microshort_url_';
 promClient.collectDefaultMetrics({ prefix: servicePrefix });
@@ -120,7 +126,7 @@ async function getDomain(reqId) {
   if (cachedDomain && Date.now() - cacheTime < CACHE_TTL) {
     return cachedDomain;
   }
-  
+
   try {
     const headers = {};
     if (reqId) {
@@ -147,13 +153,13 @@ async function validateApiKey(req, res, next) {
     req.user = { id: 0, role: 'admin' };
     return next();
   }
-  
+
   const apiKey = req.headers['x-api-key'];
-  
+
   if (!apiKey) {
     return res.status(401).json({ error: 'API key required' });
   }
-  
+
   try {
     const response = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
       method: 'POST',
@@ -186,7 +192,7 @@ async function requireAdminApiKey(req, res, next) {
     req.user = { id: 0, role: 'admin' };
     return next();
   }
-  
+
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) return res.status(401).json({ error: 'API key required' });
   try {
@@ -221,12 +227,40 @@ function requireServiceToken(req, res, next) {
   next();
 }
 
-// Health check (liveness)
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     summary: Liveness check
+ *     tags: [Observability]
+ *     responses:
+ *       200:
+ *         description: Service is alive
+ */
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-// Readiness check
+/**
+ * @openapi
+ * /ready:
+ *   get:
+ *     summary: Readiness check
+ *     tags: [Observability]
+ *     responses:
+ *       200:
+ *         description: Service is ready (MySQL healthy)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ready
+ *       503:
+ *         description: Database unavailable
+ */
 app.get('/ready', async (req, res) => {
   const ok = await checkHealth();
   res.status(ok ? 200 : 503).json({ status: ok ? 'ready' : 'unavailable' });
@@ -238,15 +272,67 @@ app.get('/metrics', async (req, res) => {
   res.end(await promClient.register.metrics());
 });
 
-// Create short URL
+/**
+ * @openapi
+ * /urls:
+ *   post:
+ *     summary: Create a short URL
+ *     tags: [URLs]
+ *     security:
+ *       - apiKey: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [url]
+ *             properties:
+ *               url:
+ *                 type: string
+ *                 format: uri
+ *                 example: https://example.com/some/very/long/path
+ *               customSlug:
+ *                 type: string
+ *                 example: myslug
+ *                 description: Optional custom slug (alphanumeric, hyphens, underscores)
+ *     responses:
+ *       201:
+ *         description: Short URL created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                 shortUrl:
+ *                   type: string
+ *                   example: https://sho.rt/abc123
+ *                 longUrl:
+ *                   type: string
+ *                 slug:
+ *                   type: string
+ *                 createdAt:
+ *                   type: string
+ *                   format: date-time
+ *       400:
+ *         description: URL missing or invalid format
+ *       401:
+ *         description: API key missing or invalid
+ *       409:
+ *         description: Slug already in use
+ *       429:
+ *         description: Rate limit exceeded
+ */
 app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
   try {
     const { url, customSlug } = req.body;
-    
+
     if (!url) {
       return res.status(400).json({ error: 'URL required' });
     }
-    
+
     // Basic URL validation
     let parsed;
     try {
@@ -257,7 +343,7 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return res.status(400).json({ error: 'Only http and https URLs are allowed' });
     }
-    
+
     // Generate or validate slug
     let slug = customSlug;
     if (!slug) {
@@ -268,13 +354,13 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
         return res.status(400).json({ error: 'Invalid slug format' });
       }
     }
-    
+
     // Check if slug already exists
     const existing = await getUrlBySlug(slug);
     if (existing) {
       return res.status(409).json({ error: 'Slug already in use' });
     }
-    
+
     // Create URL
     let urlRecord;
     try {
@@ -286,7 +372,7 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
       throw err;
     }
     const domain = await getDomain(req.id);
-    
+
     urlCreations.inc({ type: customSlug ? 'custom' : 'auto' });
 
     res.status(201).json({
@@ -302,16 +388,42 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
   }
 });
 
-// Get URL by slug (public endpoint for redirect service)
+/**
+ * @openapi
+ * /urls/{slug}:
+ *   get:
+ *     summary: Look up a slug (used by redirect-service)
+ *     tags: [URLs]
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Slug resolved
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 longUrl:
+ *                   type: string
+ *                 slug:
+ *                   type: string
+ *       404:
+ *         description: Slug not found
+ */
 app.get('/urls/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
     const urlRecord = await getUrlBySlug(slug);
-    
+
     if (!urlRecord) {
       return res.status(404).json({ error: 'URL not found' });
     }
-    
+
     res.json({
       longUrl: urlRecord.long_url,
       slug: urlRecord.slug
@@ -322,12 +434,48 @@ app.get('/urls/:slug', async (req, res) => {
   }
 });
 
-// List user's URLs
+/**
+ * @openapi
+ * /urls:
+ *   get:
+ *     summary: List the current user's short URLs
+ *     tags: [URLs]
+ *     security:
+ *       - apiKey: []
+ *     responses:
+ *       200:
+ *         description: List of URLs owned by the authenticated user
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 urls:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       shortUrl:
+ *                         type: string
+ *                       longUrl:
+ *                         type: string
+ *                       slug:
+ *                         type: string
+ *                       clicks:
+ *                         type: integer
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *       401:
+ *         description: API key missing or invalid
+ */
 app.get('/urls', validateApiKey, async (req, res) => {
   try {
     const urls = await getUserUrls(req.user.id);
     const domain = await getDomain(req.id);
-    
+
     const formattedUrls = urls.map(u => ({
       id: u.id,
       shortUrl: `${domain}/${u.slug}`,
@@ -336,7 +484,7 @@ app.get('/urls', validateApiKey, async (req, res) => {
       clicks: u.clicks,
       createdAt: u.created_at
     }));
-    
+
     res.json({ urls: formattedUrls });
   } catch (err) {
     req.log.error({ err }, 'List URLs error');
@@ -344,25 +492,60 @@ app.get('/urls', validateApiKey, async (req, res) => {
   }
 });
 
-// Delete URL
+/**
+ * @openapi
+ * /urls/{slug}:
+ *   delete:
+ *     summary: Delete a short URL
+ *     tags: [URLs]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: URL deleted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: URL deleted
+ *                 slug:
+ *                   type: string
+ *       400:
+ *         description: Invalid slug format
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: URL belongs to a different user
+ *       404:
+ *         description: URL not found
+ */
 app.delete('/urls/:slug', validateApiKey, async (req, res) => {
   try {
     const { slug } = req.params;
-    
+
     if (!isValidSlug(slug)) {
       return res.status(400).json({ error: 'Invalid slug format' });
     }
-    
+
     // Check ownership
     const urlRecord = await getUrlBySlug(slug);
     if (!urlRecord) {
       return res.status(404).json({ error: 'URL not found' });
     }
-    
+
     if (urlRecord.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    
+
     await deleteUrl(urlRecord.id);
     res.json({ message: 'URL deleted', slug });
   } catch (err) {
@@ -371,15 +554,63 @@ app.delete('/urls/:slug', validateApiKey, async (req, res) => {
   }
 });
 
-// Update URL
+/**
+ * @openapi
+ * /urls/{slug}:
+ *   put:
+ *     summary: Update the long URL for an existing slug
+ *     tags: [URLs]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [url]
+ *             properties:
+ *               url:
+ *                 type: string
+ *                 format: uri
+ *                 example: https://new-destination.example.com
+ *     responses:
+ *       200:
+ *         description: URL updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 shortUrl:
+ *                   type: string
+ *                 longUrl:
+ *                   type: string
+ *                 slug:
+ *                   type: string
+ *       400:
+ *         description: URL missing or invalid
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: URL belongs to a different user
+ *       404:
+ *         description: Slug not found
+ */
 app.put('/urls/:slug', validateApiKey, async (req, res) => {
   try {
     const { slug } = req.params;
-    
+
     if (!isValidSlug(slug)) {
       return res.status(400).json({ error: 'Invalid slug format' });
     }
-    
+
     const { url: newUrl } = req.body;
     if (!newUrl) {
       return res.status(400).json({ error: 'URL required' });
@@ -416,7 +647,66 @@ app.put('/urls/:slug', validateApiKey, async (req, res) => {
   }
 });
 
-// Admin: Get all URLs
+/**
+ * @openapi
+ * /admin/urls:
+ *   get:
+ *     summary: List all short URLs (admin)
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *         description: Search query (slug or long URL substring)
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: integer
+ *         description: Pagination cursor (URL ID offset)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Paginated URL list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 urls:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       shortUrl:
+ *                         type: string
+ *                       longUrl:
+ *                         type: string
+ *                       slug:
+ *                         type: string
+ *                       clicks:
+ *                         type: integer
+ *                       userId:
+ *                         type: integer
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                 nextCursor:
+ *                   type: integer
+ *                   nullable: true
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/urls', requireAdminApiKey, async (req, res) => {
   try {
     const { q, cursor, limit } = req.query;
@@ -430,7 +720,7 @@ app.get('/admin/urls', requireAdminApiKey, async (req, res) => {
       result = await getAllUrls({ cursor: parsedCursor, limit: parsedLimit });
     }
     const domain = await getDomain(req.id);
-    
+
     const formattedUrls = result.urls.map(u => ({
       id: u.id,
       shortUrl: `${domain}/${u.slug}`,
@@ -440,7 +730,7 @@ app.get('/admin/urls', requireAdminApiKey, async (req, res) => {
       userId: u.user_id,
       createdAt: u.created_at
     }));
-    
+
     res.json({ urls: formattedUrls, nextCursor: result.nextCursor });
   } catch (err) {
     req.log.error({ err }, 'Admin URLs error');
@@ -448,7 +738,31 @@ app.get('/admin/urls', requireAdminApiKey, async (req, res) => {
   }
 });
 
-// Admin: Get URL stats
+/**
+ * @openapi
+ * /admin/stats:
+ *   get:
+ *     summary: Get URL service statistics (admin)
+ *     tags: [Admin]
+ *     security:
+ *       - apiKey: []
+ *     responses:
+ *       200:
+ *         description: URL service statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalUrls:
+ *                   type: integer
+ *                 recentUrls:
+ *                   type: integer
+ *       401:
+ *         description: API key missing or invalid
+ *       403:
+ *         description: Admin role required
+ */
 app.get('/admin/stats', requireAdminApiKey, async (req, res) => {
   try {
     const stats = await getUrlStats();
@@ -459,7 +773,29 @@ app.get('/admin/stats', requireAdminApiKey, async (req, res) => {
   }
 });
 
-// Internal Admin: Get URL stats (requires service token)
+/**
+ * @openapi
+ * /internal/admin/stats:
+ *   get:
+ *     summary: Get URL service statistics (internal service-to-service)
+ *     tags: [Internal]
+ *     security:
+ *       - serviceToken: []
+ *     responses:
+ *       200:
+ *         description: URL service statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalUrls:
+ *                   type: integer
+ *                 recentUrls:
+ *                   type: integer
+ *       401:
+ *         description: Service token missing or invalid
+ */
 app.get('/internal/admin/stats', requireServiceToken, async (req, res) => {
   try {
     const stats = await getUrlStats();
@@ -519,6 +855,27 @@ async function syncClickCounts() {
     logger.error({ job: 'click-sync', jobId, err }, 'Click count sync failed');
   }
 }
+
+const swaggerSpec = swaggerJsdoc({
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'URL Service API',
+      version: '1.0.0',
+      description: 'Create and manage short URLs and slugs. System of record for slug → long URL.'
+    },
+    servers: [{ url: `http://localhost:${PORT}` }],
+    components: {
+      securitySchemes: {
+        apiKey:       { type: 'apiKey', in: 'header', name: 'X-API-Key' },
+        serviceToken: { type: 'apiKey', in: 'header', name: 'X-Service-Token' }
+      }
+    }
+  },
+  apis: [join(__dirname, 'index.js')]
+});
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 let syncIntervalId;
 let server;
