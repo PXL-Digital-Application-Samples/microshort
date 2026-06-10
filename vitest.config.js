@@ -7,6 +7,7 @@ export default defineConfig({
     include: ['tests/integration/**/*.test.js'],
     exclude: isRateLimitRun ? [] : ['tests/integration/m2/rate-limiting.test.js'],  // run separately via test:e2e:rate
     globalSetup: 'tests/integration/setup.js',
+    setupFiles: ['tests/integration/env-setup.js'],
     testTimeout: 20_000, // increased timeout for sleep steps in rate-limiting
     hookTimeout: 30_000,
     pool: 'forks',  // each test file in its own process; avoids shared module state
