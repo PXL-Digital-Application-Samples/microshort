@@ -2,6 +2,7 @@ import { cleanEnv, str } from 'envalid';
 
 export const env = cleanEnv(process.env, {
   SERVICE_TOKEN:         str({ desc: 'Shared service-to-service token for analytics calls' }),
+  REDIRECT_SERVICE_TOKEN: str({ desc: 'Token used by redirect-service to call analytics' }),
   IP_HASH_SALT:          str({ desc: 'Salt for SHA-256(client_ip+salt) — changing this invalidates historical ip_hash values' }),
   URL_SERVICE_URL:       str({ default: 'http://url-service:3002' }),
   ANALYTICS_SERVICE_URL: str({ default: 'http://analytics-service:3005' }),

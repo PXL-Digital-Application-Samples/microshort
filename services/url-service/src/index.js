@@ -2,17 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { env } from './env.js';
-import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, updateClickCount, getAllUrls, searchUrls, getUrlStats, pool, checkHealth } from './db.js';
+import { createUrl, getUrlBySlug, getUserUrls, deleteUrl, updateUrl, updateClickCount, getAllUrls, searchUrls, getUrlStats, pool, checkHealth } from './db.js';
 import { isValidSlug } from './utils.js';
 import { nanoid } from 'nanoid';
-import pino from 'pino';
 import pinoHttp from 'pino-http';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual, createHash } from 'crypto';
 import promClient from 'prom-client';
 import Redis from 'ioredis';
 import { RedisStore } from 'rate-limit-redis';
-
-const logger = pino({ level: env.LOG_LEVEL });
+import logger from './logger.js';
 
 const servicePrefix = 'microshort_url_';
 promClient.collectDefaultMetrics({ prefix: servicePrefix });
@@ -39,6 +37,11 @@ const urlCreations = new promClient.Counter({
   labelNames: ['type']    // 'auto' (nanoid), 'custom' (user-specified slug)
 });
 
+const rateLimitBypass = new promClient.Counter({
+  name: 'microshort_url_rate_limit_bypass_total',
+  help: 'Times rate limiting was bypassed due to Redis store unavailability'
+});
+
 const redis = new Redis(env.REDIS_URL, {
   lazyConnect: true,
   enableOfflineQueue: false,
@@ -46,7 +49,10 @@ const redis = new Redis(env.REDIS_URL, {
   connectTimeout: 2000
 });
 
-redis.on('error', err => logger.error({ err }, 'Redis error'));
+redis.on('error', err => {
+  logger.warn({ err }, 'Redis store unavailable — rate limiting bypassed (passOnStoreError=true)');
+  rateLimitBypass.inc();
+});
 
 const app = express();
 const PORT = env.PORT;
@@ -71,7 +77,11 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+const allowedOrigins = env.ALLOWED_ORIGINS === '*'
+  ? '*'
+  : env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
+
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 app.use((req, res, next) => {
@@ -162,6 +172,42 @@ async function validateApiKey(req, res, next) {
   }
 }
 
+// Require admin API key middleware
+async function requireAdminApiKey(req, res, next) {
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey) return res.status(401).json({ error: 'API key required' });
+  try {
+    const response = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-request-id': req.id },
+      body: JSON.stringify({ apiKey }),
+      signal: AbortSignal.timeout(2000)
+    });
+    if (!response.ok) return res.status(401).json({ error: 'Invalid API key' });
+    const data = await response.json();
+    if (!data.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    req.admin = { id: data.userId, role: data.role };
+    next();
+  } catch (err) {
+    req.log.error({ err }, 'Admin auth validation error');
+    res.status(503).json({ error: 'Authentication service unavailable' });
+  }
+}
+
+function safeTokenEqual(a, b) {
+  const digest = (s) => createHash('sha256').update(s).digest();
+  return timingSafeEqual(digest(a), digest(b));
+}
+
+// Require service token middleware
+function requireServiceToken(req, res, next) {
+  const token = req.headers['x-service-token'] ?? '';
+  if (!env.ADMIN_SERVICE_TOKEN || !safeTokenEqual(env.ADMIN_SERVICE_TOKEN, token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
 // Health check (liveness)
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
@@ -189,10 +235,14 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
     }
     
     // Basic URL validation
+    let parsed;
     try {
-      new URL(url);
+      parsed = new URL(url);
     } catch {
       return res.status(400).json({ error: 'Invalid URL format' });
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return res.status(400).json({ error: 'Only http and https URLs are allowed' });
     }
     
     // Generate or validate slug
@@ -213,7 +263,15 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
     }
     
     // Create URL
-    const urlRecord = await createUrl(req.user.id, url, slug);
+    let urlRecord;
+    try {
+      urlRecord = await createUrl(req.user.id, url, slug);
+    } catch (err) {
+      if (err.code === 'ER_DUP_ENTRY' || err.errno === 1062) {
+        return res.status(409).json({ error: 'Slug already in use' });
+      }
+      throw err;
+    }
     const domain = await getDomain(req.id);
     
     urlCreations.inc({ type: customSlug ? 'custom' : 'auto' });
@@ -296,39 +354,62 @@ app.delete('/urls/:slug', validateApiKey, async (req, res) => {
   }
 });
 
-// Admin: Get all URLs
-app.get('/admin/urls', async (req, res) => {
+// Update URL
+app.put('/urls/:slug', validateApiKey, async (req, res) => {
   try {
-    const apiKey = req.headers['x-api-key'];
-    if (!apiKey) {
-      return res.status(401).json({ error: 'API key required' });
+    const { slug } = req.params;
+    const { url: newUrl } = req.body;
+    if (!newUrl) {
+      return res.status(400).json({ error: 'URL required' });
     }
 
-    // Validate admin key via auth service
-    const authResponse = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-request-id': req.id
-      },
-      body: JSON.stringify({ apiKey }),
-      signal: AbortSignal.timeout(2000)
+    let parsed;
+    try {
+      parsed = new URL(newUrl);
+    } catch {
+      return res.status(400).json({ error: 'Invalid URL format' });
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return res.status(400).json({ error: 'Only http and https URLs are allowed' });
+    }
+
+    const urlRecord = await getUrlBySlug(slug);
+    if (!urlRecord) {
+      return res.status(404).json({ error: 'URL not found' });
+    }
+    if (urlRecord.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const updated = await updateUrl(urlRecord.id, newUrl);
+    const domain = await getDomain(req.id);
+    res.json({
+      shortUrl: `${domain}/${slug}`,
+      longUrl: updated.long_url,
+      slug
     });
+  } catch (err) {
+    req.log.error({ err }, 'Update URL error');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
-    if (!authResponse.ok) {
-      return res.status(401).json({ error: 'Invalid API key' });
+// Admin: Get all URLs
+app.get('/admin/urls', requireAdminApiKey, async (req, res) => {
+  try {
+    const { q, cursor, limit } = req.query;
+    let result;
+    if (q) {
+      const rawUrls = await searchUrls(q);
+      result = { urls: rawUrls, nextCursor: null };
+    } else {
+      const parsedCursor = cursor ? parseInt(cursor) : undefined;
+      const parsedLimit = limit ? parseInt(limit) : undefined;
+      result = await getAllUrls({ cursor: parsedCursor, limit: parsedLimit });
     }
-
-    const authData = await authResponse.json();
-    if (!authData.isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const { q } = req.query;
-    const rawUrls = q ? await searchUrls(q) : await getAllUrls();
     const domain = await getDomain(req.id);
     
-    const formattedUrls = rawUrls.map(u => ({
+    const formattedUrls = result.urls.map(u => ({
       id: u.id,
       shortUrl: `${domain}/${u.slug}`,
       longUrl: u.long_url,
@@ -338,7 +419,7 @@ app.get('/admin/urls', async (req, res) => {
       createdAt: u.created_at
     }));
     
-    res.json({ urls: formattedUrls });
+    res.json({ urls: formattedUrls, nextCursor: result.nextCursor });
   } catch (err) {
     req.log.error({ err }, 'Admin URLs error');
     res.status(500).json({ error: 'Internal server error' });
@@ -346,37 +427,23 @@ app.get('/admin/urls', async (req, res) => {
 });
 
 // Admin: Get URL stats
-app.get('/admin/stats', async (req, res) => {
+app.get('/admin/stats', requireAdminApiKey, async (req, res) => {
   try {
-    const apiKey = req.headers['x-api-key'];
-    if (!apiKey) {
-      return res.status(401).json({ error: 'API key required' });
-    }
-
-    // Validate admin key
-    const authResponse = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-request-id': req.id
-      },
-      body: JSON.stringify({ apiKey }),
-      signal: AbortSignal.timeout(2000)
-    });
-
-    if (!authResponse.ok) {
-      return res.status(401).json({ error: 'Invalid API key' });
-    }
-
-    const authData = await authResponse.json();
-    if (!authData.isAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
     const stats = await getUrlStats();
     res.json(stats);
   } catch (err) {
     req.log.error({ err }, 'Admin stats error');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Internal Admin: Get URL stats (requires service token)
+app.get('/internal/admin/stats', requireServiceToken, async (req, res) => {
+  try {
+    const stats = await getUrlStats();
+    res.json(stats);
+  } catch (err) {
+    req.log.error({ err }, 'Internal stats error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -391,23 +458,37 @@ async function syncClickCounts() {
       return;
     }
 
-    const slugs = rows.map(r => r.slug).join(',');
-    const res = await fetch(
-      `${ANALYTICS_SERVICE_URL}/stats/counts?slugs=${encodeURIComponent(slugs)}`,
-      {
-        headers: {
-          'X-Service-Token': SERVICE_TOKEN,
-          'x-request-id': jobId
-        },
-        signal: AbortSignal.timeout(5000)
+    const slugs = rows.map(r => r.slug);
+    const counts = {};
+    const BATCH_SIZE = 500;
+
+    for (let i = 0; i < slugs.length; i += BATCH_SIZE) {
+      const batch = slugs.slice(i, i + BATCH_SIZE);
+      const res = await fetch(
+        `${ANALYTICS_SERVICE_URL}/stats/counts`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Service-Token': env.URL_SERVICE_TOKEN || SERVICE_TOKEN,
+            'x-request-id': jobId
+          },
+          body: JSON.stringify(batch),
+          signal: AbortSignal.timeout(10000)
+        }
+      );
+
+      if (!res.ok) {
+        logger.error({ job: 'click-sync', jobId, status: res.status, batchIndex: i }, 'Failed to fetch click counts from analytics service for batch');
+        continue;
       }
-    );
-    if (!res.ok) {
-      logger.warn({ job: 'click-sync', jobId, status: res.status }, 'Analytics stats counts returned non-OK response');
-      return;
+
+      const batchCounts = await res.json();
+      Object.assign(counts, batchCounts);
     }
 
-    const counts = await res.json(); // { slug: count, ... }
+    logger.info({ job: 'click-sync', jobId, count: Object.keys(counts).length }, 'Fetched click counts');
+
     await Promise.all(
       Object.entries(counts).map(([slug, count]) => updateClickCount(slug, count))
     );

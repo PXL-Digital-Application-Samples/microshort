@@ -26,21 +26,66 @@ export function App(van, html) {
         error.val = '';
         
         try {
-            const response = await fetch(`${API_BASE}${endpoint}`, {
+            let headers = {
+                'X-API-Key': apiKey.val,
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+            
+            const jwtToken = localStorage.getItem('token');
+            if (jwtToken) {
+                headers['Authorization'] = `Bearer ${jwtToken}`;
+            }
+
+            let response = await fetch(`${API_BASE}${endpoint}`, {
                 ...options,
-                headers: {
-                    'X-API-Key': apiKey.val,
-                    'Content-Type': 'application/json',
-                    ...options.headers
-                }
+                headers
             });
+            
+            if (response.status === 401) {
+                const refreshToken = localStorage.getItem('refreshToken');
+                if (refreshToken) {
+                    try {
+                        const authBase = window.ADMIN_API_BASE ? window.ADMIN_API_BASE.replace(':3003', ':3001') : 'http://localhost:3001';
+                        const refreshRes = await fetch(`${authBase}/auth/refresh`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ refreshToken })
+                        });
+                        
+                        if (refreshRes.ok) {
+                            const data = await refreshRes.json();
+                            localStorage.setItem('token', data.token);
+                            headers['Authorization'] = `Bearer ${data.token}`;
+                            
+                            // Retry the request
+                            response = await fetch(`${API_BASE}${endpoint}`, {
+                                ...options,
+                                headers
+                            });
+                        } else {
+                            localStorage.removeItem('token');
+                            localStorage.removeItem('refreshToken');
+                        }
+                    } catch (err) {
+                        console.error('Failed to refresh token', err);
+                    }
+                }
+            }
             
             if (!response.ok) {
                 const data = await response.json();
                 throw new Error(data.error || 'API request failed');
             }
             
-            return await response.json();
+            const data = await response.json();
+            if (data.token) {
+                localStorage.setItem('token', data.token);
+            }
+            if (data.refreshToken) {
+                localStorage.setItem('refreshToken', data.refreshToken);
+            }
+            return data;
         } catch (err) {
             error.val = err.message;
             throw err;

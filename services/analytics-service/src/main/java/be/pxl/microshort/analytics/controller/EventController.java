@@ -29,6 +29,9 @@ public class EventController {
         if (events == null || events.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
+        if (events.size() > 1000) {
+            return ResponseEntity.status(413).build();
+        }
         repository.insertBatch(events);
         return ResponseEntity.accepted().build();
     }

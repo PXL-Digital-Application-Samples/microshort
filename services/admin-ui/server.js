@@ -1,19 +1,61 @@
 import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import pino from 'pino';
+import pinoHttp from 'pino-http';
+import promClient from 'prom-client';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+
 const app = express();
 const PORT = process.env.PORT || 3004;
 
-// Serve static files
-app.use(express.static(__dirname));
+app.use(pinoHttp({
+  logger,
+  autoLogging: { ignore: req => req.url === '/health' || req.url === '/ready' || req.url === '/metrics' }
+}));
+
+// Prometheus metrics setup
+promClient.collectDefaultMetrics({ prefix: 'microshort_admin_ui_' });
+const httpRequests = new promClient.Counter({
+  name: 'microshort_admin_ui_http_requests_total',
+  help: 'Total HTTP requests handled',
+  labelNames: ['method', 'status']
+});
+
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    if (!['/health', '/ready', '/metrics'].includes(req.path)) {
+      httpRequests.inc({ method: req.method, status: String(res.statusCode) });
+    }
+  });
+  next();
+});
+
+// Content Security Policy
+app.use((req, res, next) => {
+  const apiBase = process.env.ADMIN_API_URL || 'http://localhost:3003';
+  res.setHeader(
+    'Content-Security-Policy',
+    `default-src 'self'; connect-src 'self' ${apiBase}; style-src 'self' 'unsafe-inline'; script-src 'self'`
+  );
+  next();
+});
+
+// Serve static files from public
+app.use(express.static(join(__dirname, 'public')));
 
 app.get('/health', (_req, res) => res.status(200).send('OK'));
 
 app.get('/ready', (_req, res) => res.status(200).send('OK'));
+
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', promClient.register.contentType);
+  res.end(await promClient.register.metrics());
+});
 
 // Serves runtime config to the browser. ADMIN_API_URL must be the
 // host-side URL that browsers use to reach admin-service.
@@ -25,22 +67,21 @@ app.get('/config.js', (req, res) => {
 
 // SPA fallback - always serve index.html for any route
 app.get('*', (req, res) => {
-    res.sendFile(join(__dirname, 'index.html'));
+    res.sendFile(join(__dirname, 'public', 'index.html'));
 });
 
 const server = app.listen(PORT, () => {
-    console.log(`Admin UI running on port ${PORT}`);
-    console.log(`Access the admin UI at http://localhost:${PORT}`);
+    logger.info({ port: PORT }, 'Admin UI started');
 });
 
 const shutdown = (signal) => {
-    console.log(`Shutdown signal received (${signal}) — closing server`);
+    logger.info({ signal }, 'Shutdown signal received — closing server');
     server.close(() => {
-        console.log('Admin UI server closed cleanly');
+        logger.info('Admin UI server closed cleanly');
         process.exit(0);
     });
     setTimeout(() => {
-        console.error('Shutdown timed out — forcing exit');
+        logger.error('Shutdown timed out — forcing exit');
         process.exit(1);
     }, 30_000).unref();
 };

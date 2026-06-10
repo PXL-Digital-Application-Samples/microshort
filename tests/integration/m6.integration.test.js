@@ -4,7 +4,7 @@ import { BASE, register, createApiKey, resetDb, uniqueEmail, createShortUrl } fr
 const AUTH_URL  = BASE.auth;
 const URL_URL   = BASE.urls;
 const ADMIN_URL = BASE.admin;
-const UI_URL    = 'http://localhost:3004';
+const UI_URL    = BASE.adminUi;
 
 let adminKey;
 

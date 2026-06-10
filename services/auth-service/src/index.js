@@ -2,17 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { env } from './env.js';
-import { createUser, findUserByEmail, createApiKey, validateApiKey, getUserApiKeys, revokeApiKey, getAllUsers, getAuthStats, checkHealth, sql } from './db.js';
+import { createUser, findUserByEmail, getUserById, createApiKey, validateApiKey, getUserApiKeys, revokeApiKey, getAllUsers, getAuthStats, checkHealth, sql } from './db.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import pino from 'pino';
 import pinoHttp from 'pino-http';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual, createHash } from 'crypto';
 import promClient from 'prom-client';
 import Redis from 'ioredis';
 import { RedisStore } from 'rate-limit-redis';
-
-const logger = pino({ level: env.LOG_LEVEL });
+import logger from './logger.js';
 
 const servicePrefix = 'microshort_auth_';
 promClient.collectDefaultMetrics({ prefix: servicePrefix });
@@ -39,6 +37,11 @@ const apiKeyValidations = new promClient.Counter({
   labelNames: ['result']   // 'valid', 'invalid'
 });
 
+const rateLimitBypass = new promClient.Counter({
+  name: 'microshort_auth_rate_limit_bypass_total',
+  help: 'Times rate limiting was bypassed due to Redis store unavailability'
+});
+
 const redis = new Redis(env.REDIS_URL, {
   lazyConnect: true,
   enableOfflineQueue: false,
@@ -46,7 +49,10 @@ const redis = new Redis(env.REDIS_URL, {
   connectTimeout: 2000
 });
 
-redis.on('error', err => logger.error({ err }, 'Redis error'));
+redis.on('error', err => {
+  logger.warn({ err }, 'Redis store unavailable — rate limiting bypassed (passOnStoreError=true)');
+  rateLimitBypass.inc();
+});
 
 const app = express();
 const PORT = env.PORT;
@@ -67,7 +73,11 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+const allowedOrigins = env.ALLOWED_ORIGINS === '*'
+  ? '*'
+  : env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
+
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 app.use((req, res, next) => {
@@ -96,6 +106,19 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts, please try again later' }
 });
 
+const validateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 500,
+  standardHeaders: 'draft-6',
+  legacyHeaders: false,
+  passOnStoreError: true,
+  store: new RedisStore({
+    sendCommand: (...args) => redis.call(...args),
+    prefix: 'rl-validate:'
+  }),
+  message: { error: 'Too many validation requests' }
+});
+
 // JWT verification middleware
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -111,6 +134,40 @@ const verifyToken = (req, res, next) => {
   } catch (err) {
     return res.status(401).json({ error: 'Invalid token' });
   }
+};
+
+// Admin API key verification middleware
+const requireAdmin = async (req, res, next) => {
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey) {
+    return res.status(401).json({ error: 'API key required' });
+  }
+
+  try {
+    const keyData = await validateApiKey(apiKey);
+    if (!keyData || keyData.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    req.admin = keyData;
+    next();
+  } catch (err) {
+    req.log.error({ err }, 'requireAdmin error');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Service token verification middleware
+function safeTokenEqual(a, b) {
+  const digest = (s) => createHash('sha256').update(s).digest();
+  return timingSafeEqual(digest(a), digest(b));
+}
+
+const requireServiceToken = (req, res, next) => {
+  const token = req.headers['x-service-token'] ?? '';
+  if (!env.ADMIN_SERVICE_TOKEN || !safeTokenEqual(env.ADMIN_SERVICE_TOKEN, token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
 };
 
 // Health check (liveness)
@@ -142,8 +199,9 @@ app.post('/auth/register', authLimiter, async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await createUser(email, passwordHash);
     
-    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, userId: user.id });
+    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+    const refreshToken = jwt.sign({ userId: user.id, type: 'refresh' }, JWT_SECRET, { expiresIn: env.REFRESH_TOKEN_EXPIRES_IN });
+    res.json({ token, refreshToken, userId: user.id });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Email already exists' });
@@ -172,11 +230,34 @@ app.post('/auth/login', authLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ token, userId: user.id });
+    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+    const refreshToken = jwt.sign({ userId: user.id, type: 'refresh' }, JWT_SECRET, { expiresIn: env.REFRESH_TOKEN_EXPIRES_IN });
+    res.json({ token, refreshToken, userId: user.id });
   } catch (err) {
     req.log.error({ err }, 'Login error');
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Refresh access token
+app.post('/auth/refresh', async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'Refresh token required' });
+  }
+  try {
+    const decoded = jwt.verify(refreshToken, JWT_SECRET);
+    if (decoded.type !== 'refresh') {
+      return res.status(400).json({ error: 'Invalid token type' });
+    }
+    const user = await getUserById(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+    res.json({ token });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid refresh token' });
   }
 });
 
@@ -197,21 +278,12 @@ app.get('/auth/me', verifyToken, async (req, res) => {
 });
 
 // Admin: Get all users (requires admin API key)
-app.get('/admin/users', async (req, res) => {
+app.get('/admin/users', requireAdmin, async (req, res) => {
   try {
-    const apiKey = req.headers['x-api-key'];
-    if (!apiKey) {
-      return res.status(401).json({ error: 'API key required' });
-    }
-
-    // Check if admin
-    const keyData = await validateApiKey(apiKey);
-    if (!keyData || keyData.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const users = await getAllUsers();
-    res.json({ users });
+    const cursor = req.query.cursor ? parseInt(req.query.cursor) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit) : undefined;
+    const result = await getAllUsers({ cursor, limit });
+    res.json(result);
   } catch (err) {
     req.log.error({ err }, 'Admin users error');
     res.status(500).json({ error: 'Internal server error' });
@@ -219,22 +291,23 @@ app.get('/admin/users', async (req, res) => {
 });
 
 // Admin: Get auth stats
-app.get('/admin/stats', async (req, res) => {
+app.get('/admin/stats', requireAdmin, async (req, res) => {
   try {
-    const apiKey = req.headers['x-api-key'];
-    if (!apiKey) {
-      return res.status(401).json({ error: 'API key required' });
-    }
-
-    const keyData = await validateApiKey(apiKey);
-    if (!keyData || keyData.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
     const stats = await getAuthStats();
     res.json(stats);
   } catch (err) {
     req.log.error({ err }, 'Admin stats error');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Internal Admin: Get auth stats (requires service token)
+app.get('/internal/admin/stats', requireServiceToken, async (req, res) => {
+  try {
+    const stats = await getAuthStats();
+    res.json(stats);
+  } catch (err) {
+    req.log.error({ err }, 'Internal stats error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -257,7 +330,7 @@ app.post('/auth/api-keys', verifyToken, async (req, res) => {
 });
 
 // Validate API key (for other services to use)
-app.post('/auth/validate', async (req, res) => {
+app.post('/auth/validate', validateLimiter, async (req, res) => {
   try {
     const { apiKey } = req.body;
     

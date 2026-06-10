@@ -33,9 +33,10 @@ describe('isValidSlug', () => {
     expect(isValidSlug('')).toBe(false);
   });
 
-  it('rejects non-string values', () => {
-    expect(isValidSlug(null)).toBe(false);
-    expect(isValidSlug(undefined)).toBe(false);
-    expect(isValidSlug(123)).toBe(false);
+  it('rejects reserved slugs', () => {
+    expect(isValidSlug('health')).toBe(false);
+    expect(isValidSlug('ready')).toBe(false);
+    expect(isValidSlug('metrics')).toBe(false);
+    expect(isValidSlug('healthy')).toBe(true);
   });
 });

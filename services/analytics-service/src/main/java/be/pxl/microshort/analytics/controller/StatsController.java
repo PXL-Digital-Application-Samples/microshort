@@ -57,4 +57,15 @@ public class StatsController {
             .toList();
         return ResponseEntity.ok(repository.getCounts(slugList));
     }
+
+    @PostMapping("/counts")
+    public ResponseEntity<Map<String, Long>> countsByPost(@RequestBody List<String> slugs) {
+        if (slugs == null || slugs.isEmpty()) {
+            return ResponseEntity.ok(Map.of());
+        }
+        if (slugs.size() > 2000) {
+            return ResponseEntity.status(413).build();
+        }
+        return ResponseEntity.ok(repository.getCounts(slugs));
+    }
 }

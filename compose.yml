@@ -28,6 +28,8 @@ services:
       - DB_USER=authuser
       - DB_PASSWORD=${AUTH_DB_PASSWORD:?AUTH_DB_PASSWORD must be set in .env}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
+      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:-dev-admin-token}
       - REDIS_URL=redis://redis:6379
     depends_on:
       auth-db:
@@ -74,6 +76,8 @@ services:
       - CONFIG_SERVICE_URL=http://config-service:3000
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
       - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
+      - URL_SERVICE_TOKEN=${URL_SERVICE_TOKEN:-dev-url-token}
+      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:-dev-admin-token}
       - REDIS_URL=redis://redis:6379
     depends_on:
       url-db:
@@ -120,6 +124,7 @@ services:
       - CONFIG_SERVICE_URL=http://config-service:3000
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
       - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
+      - REDIRECT_SERVICE_TOKEN=${REDIRECT_SERVICE_TOKEN:-dev-redirect-token}
       - IP_HASH_SALT=${IP_HASH_SALT:?IP_HASH_SALT must be set in .env}
       - REDIS_URL=redis://redis:6379
     depends_on:
@@ -151,6 +156,7 @@ services:
       - CONFIG_WRITE_TOKEN=${CONFIG_WRITE_TOKEN:?CONFIG_WRITE_TOKEN must be set in .env}
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
       - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
+      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:-dev-admin-token}
     depends_on:
       auth-service:
         condition: service_healthy
@@ -195,6 +201,9 @@ services:
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
       - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
+      - REDIRECT_SERVICE_TOKEN=${REDIRECT_SERVICE_TOKEN:-dev-redirect-token}
+      - URL_SERVICE_TOKEN=${URL_SERVICE_TOKEN:-dev-url-token}
+      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:-dev-admin-token}
     depends_on:
       clickhouse:
         condition: service_healthy

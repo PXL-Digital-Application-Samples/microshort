@@ -26,3 +26,19 @@ jobs:
         run: mvn -B verify --no-transfer-progress
       - name: Build Docker image
         run: docker build -t microshort-analytics:ci services/analytics-service
+
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag image
+        if: github.ref == 'refs/heads/main'
+        run: docker tag microshort-analytics:ci ghcr.io/pxl-digital-application-samples/microshort-analytics-service:latest
+
+      - name: Push image
+        if: github.ref == 'refs/heads/main'
+        run: docker push ghcr.io/pxl-digital-application-samples/microshort-analytics-service:latest

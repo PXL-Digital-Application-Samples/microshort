@@ -1,7 +1,8 @@
 import postgres from 'postgres';
 import { nanoid } from 'nanoid';
 import { env } from './env.js';
-import { hashKey } from './utils.js';
+import { hashKey, isValidApiKeyFormat } from './utils.js';
+import logger from './logger.js';
 
 export const sql = postgres({
   host: env.DB_HOST,
@@ -16,14 +17,17 @@ export const sql = postgres({
 
 // Create a new user
 export async function createUser(email, passwordHash) {
-  const [{ count }] = await sql`SELECT COUNT(*) as count FROM users`;
-  const role = parseInt(count) === 0 ? 'admin' : 'user';
-  const [user] = await sql`
-    INSERT INTO users (email, password_hash, role)
-    VALUES (${email}, ${passwordHash}, ${role})
-    RETURNING id, email, role, created_at
-  `;
-  return user;
+  return sql.begin(async sql => {
+    await sql`LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE`;
+    const [{ count }] = await sql`SELECT COUNT(*) as count FROM users`;
+    const role = parseInt(count) === 0 ? 'admin' : 'user';
+    const [user] = await sql`
+      INSERT INTO users (email, password_hash, role)
+      VALUES (${email}, ${passwordHash}, ${role})
+      RETURNING id, email, role, created_at
+    `;
+    return user;
+  });
 }
 
 // Find user by email
@@ -32,6 +36,16 @@ export async function findUserByEmail(email) {
     SELECT id, email, password_hash, role, created_at
     FROM users
     WHERE email = ${email}
+  `;
+  return user;
+}
+
+// Find user by ID
+export async function getUserById(id) {
+  const [user] = await sql`
+    SELECT id, email, password_hash, role, created_at
+    FROM users
+    WHERE id = ${id}
   `;
   return user;
 }
@@ -51,6 +65,7 @@ export async function createApiKey(userId, name) {
 
 // Validate an API key
 export async function validateApiKey(key) {
+  if (!isValidApiKeyFormat(key)) return undefined;
   const keyHash = hashKey(key);
   const [keyData] = await sql`
     SELECT k.id, k.user_id, u.role
@@ -63,7 +78,7 @@ export async function validateApiKey(key) {
     // Fire-and-forget: decouple last_used_at from the hot path (CR 2.3).
     // Validation is now a pure read; the UPDATE happens asynchronously.
     sql`UPDATE api_keys SET last_used_at = NOW() WHERE id = ${keyData.id}`
-      .catch(err => console.error('last_used_at update failed:', err));
+      .catch(err => logger.error({ err }, 'last_used_at update failed'));
   }
   return keyData; // { id, user_id, role } or undefined
 }
@@ -96,23 +111,27 @@ export async function checkHealth() {
     await sql`SELECT 1`;
     return true;
   } catch (err) {
-    console.error('Database health check failed:', err);
+    logger.error({ err }, 'Database health check failed');
     return false;
   }
 }
 
-export async function getAllUsers() {
-  const users = await sql`
-    SELECT id, email, role, created_at
-    FROM users
-    ORDER BY created_at DESC
-  `;
-  return users.map(u => ({
-    id: u.id,
-    email: u.email,
-    role: u.role,
-    createdAt: u.created_at
-  }));
+export async function getAllUsers({ cursor, limit = 50 } = {}) {
+  const users = cursor
+    ? await sql`
+        SELECT id, email, role, created_at FROM users
+        WHERE id < ${cursor}
+        ORDER BY id DESC LIMIT ${limit + 1}`
+    : await sql`
+        SELECT id, email, role, created_at FROM users
+        ORDER BY id DESC LIMIT ${limit + 1}`;
+
+  const hasMore = users.length > limit;
+  const page = hasMore ? users.slice(0, limit) : users;
+  return {
+    users: page.map(u => ({ id: u.id, email: u.email, role: u.role, createdAt: u.created_at })),
+    nextCursor: hasMore ? page[page.length - 1].id : null
+  };
 }
 
 // Admin: Get auth statistics

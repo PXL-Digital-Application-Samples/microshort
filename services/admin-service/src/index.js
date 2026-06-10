@@ -33,6 +33,7 @@ const URL_SERVICE_URL = env.URL_SERVICE_URL;
 const CONFIG_SERVICE_URL = env.CONFIG_SERVICE_URL;
 const ANALYTICS_SERVICE_URL = env.ANALYTICS_SERVICE_URL;
 const SERVICE_TOKEN         = env.SERVICE_TOKEN;
+const ADMIN_SERVICE_TOKEN   = env.ADMIN_SERVICE_TOKEN || SERVICE_TOKEN;
 
 app.set('trust proxy', 1);
 
@@ -48,7 +49,11 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors());
+const allowedOrigins = env.ALLOWED_ORIGINS === '*'
+  ? '*'
+  : env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
+
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 app.use((req, res, next) => {
@@ -146,20 +151,20 @@ app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
   const sharedHeaders = { 'x-request-id': req.id };
 
   const [authData, urlData, overviewData, topData] = await Promise.all([
-    fetchUpstream(`${AUTH_SERVICE_URL}/admin/stats`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'], ...sharedHeaders },
+    fetchUpstream(`${AUTH_SERVICE_URL}/internal/admin/stats`, {
+      headers: { 'X-Service-Token': ADMIN_SERVICE_TOKEN, ...sharedHeaders },
       signal: AbortSignal.timeout(2000)
     }, req.log),
-    fetchUpstream(`${URL_SERVICE_URL}/admin/stats`, {
-      headers: { 'X-API-Key': req.headers['x-api-key'], ...sharedHeaders },
+    fetchUpstream(`${URL_SERVICE_URL}/internal/admin/stats`, {
+      headers: { 'X-Service-Token': ADMIN_SERVICE_TOKEN, ...sharedHeaders },
       signal: AbortSignal.timeout(2000)
     }, req.log),
     fetchUpstream(`${ANALYTICS_SERVICE_URL}/stats/overview`, {
-      headers: { 'X-Service-Token': SERVICE_TOKEN, ...sharedHeaders },
+      headers: { 'X-Service-Token': ADMIN_SERVICE_TOKEN, ...sharedHeaders },
       signal: AbortSignal.timeout(2000)
     }, req.log),
     fetchUpstream(`${ANALYTICS_SERVICE_URL}/stats/top?limit=10`, {
-      headers: { 'X-Service-Token': SERVICE_TOKEN, ...sharedHeaders },
+      headers: { 'X-Service-Token': ADMIN_SERVICE_TOKEN, ...sharedHeaders },
       signal: AbortSignal.timeout(2000)
     }, req.log)
   ]);
@@ -233,6 +238,36 @@ app.get('/admin/urls', validateAdminKey, async (req, res) => {
   } catch (err) {
     req.log.error({ err }, 'URLs list error');
     res.status(500).json({ error: 'Failed to fetch URLs' });
+  }
+});
+
+// Update a URL
+app.put('/admin/urls/:slug', validateAdminKey, async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { url } = req.body;
+    
+    const response = await fetch(`${URL_SERVICE_URL}/urls/${slug}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': req.headers['x-api-key'],
+        'x-request-id': req.id
+      },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(2000)
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      return res.status(response.status).json({ error: errData.error || 'Failed to update URL' });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    req.log.error({ err }, 'Update URL error');
+    res.status(500).json({ error: 'Failed to update URL' });
   }
 });
 
@@ -364,21 +399,32 @@ app.get('/admin/health/services', validateAdminKey, async (req, res) => {
   }
 });
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT }, 'Admin service started');
-});
+let server;
+if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(PORT, () => {
+    logger.info({ port: PORT }, 'Admin service started');
+  });
+}
 
 const shutdown = async (signal) => {
   logger.info({ signal }, 'Shutdown signal received — draining connections');
-  server.close(() => {
-    logger.info('Admin service shut down cleanly');
+  if (server) {
+    server.close(() => {
+      logger.info('Admin service shut down cleanly');
+      process.exit(0);
+    });
+  } else {
     process.exit(0);
-  });
+  }
   setTimeout(() => {
     logger.error('Shutdown timed out — forcing exit');
     process.exit(1);
   }, 30_000).unref();
 };
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
+if (process.env.NODE_ENV !== 'test') {
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
+}
+
+export { app, server };

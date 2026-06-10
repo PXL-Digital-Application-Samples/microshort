@@ -4,8 +4,10 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import promClient from 'prom-client';
 import Redis from 'ioredis';
+import rateLimit from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
 import { env } from './env.js';
-import { hashIp } from './utils.js';
+import { hashIp, escapeHtml } from './utils.js';
 
 const logger = pino({ level: env.LOG_LEVEL });
 
@@ -61,6 +63,27 @@ const ANALYTICS_FLUSH_MS    = parseInt(env.ANALYTICS_FLUSH_MS);
 
 // Enable trust proxy so req.ip reflects the real client when behind a proxy
 app.set('trust proxy', 1);
+
+app.use((req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; style-src 'unsafe-inline'"
+  );
+  next();
+});
+
+const redirectLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 300,
+  standardHeaders: 'draft-6',
+  legacyHeaders: false,
+  passOnStoreError: true,
+  store: new RedisStore({
+    sendCommand: (...args) => redis.call(...args),
+    prefix: 'rl-redirect:'
+  }),
+  message: { error: 'Too many requests' }
+});
 
 app.use(pinoHttp({
   logger,
@@ -145,14 +168,14 @@ function bufferEvent(slug, userAgent, referer, ip) {
 async function flushEvents() {
   if (eventBuffer.length === 0) return;
   const jobId = randomUUID();
-  const batch = eventBuffer.splice(0);
+  const batch = eventBuffer.splice(0, 1000);
   logger.info({ job: 'analytics-flush', jobId, batchSize: batch.length }, 'Flushing analytics events');
   try {
     await fetch(`${ANALYTICS_SERVICE_URL}/events:batch`, {
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Service-Token': SERVICE_TOKEN,
+        'X-Service-Token': env.REDIRECT_SERVICE_TOKEN || SERVICE_TOKEN,
         'x-request-id': jobId
       },
       body:    JSON.stringify(batch),
@@ -210,7 +233,7 @@ app.get('/', async (req, res) => {
       <body>
         <h1>microshort</h1>
         <p>URL shortener service</p>
-        <p>Domain: <code>${config.domain}</code></p>
+        <p>Domain: <code>${escapeHtml(config.domain)}</code></p>
       </body>
       </html>
     `);
@@ -220,7 +243,7 @@ app.get('/', async (req, res) => {
 });
 
 // Handle redirects
-app.get('/:slug', async (req, res) => {
+app.get('/:slug', redirectLimiter, async (req, res) => {
   const { slug } = req.params;
   
   // Validate slug format

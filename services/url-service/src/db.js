@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise';
 import { env } from './env.js';
+import logger from './logger.js';
 
 export const pool = mysql.createPool({
   host: env.DB_HOST,
@@ -55,6 +56,19 @@ export async function deleteUrl(urlId) {
   );
 }
 
+// Update a URL
+export async function updateUrl(urlId, newLongUrl) {
+  await pool.execute(
+    'UPDATE urls SET long_url = ? WHERE id = ?',
+    [newLongUrl, urlId]
+  );
+  const [rows] = await pool.execute(
+    'SELECT * FROM urls WHERE id = ?',
+    [urlId]
+  );
+  return rows[0];
+}
+
 // Updates the eventually-consistent click count cache. Called by the
 // scheduled analytics sync job, not on the request hot path.
 export async function updateClickCount(slug, count) {
@@ -70,25 +84,40 @@ export async function checkHealth() {
     await pool.execute('SELECT 1');
     return true;
   } catch (err) {
-    console.error('Database health check failed:', err);
+    logger.error({ err }, 'Database health check failed');
     return false;
   }
 }
 
 // Admin: Get all URLs
-export async function getAllUrls() {
-  const [rows] = await pool.execute(
-    'SELECT * FROM urls ORDER BY created_at DESC LIMIT 1000'
-  );
-  
-  return rows;
+export async function getAllUrls({ cursor, limit = 50 } = {}) {
+  const [rows] = cursor
+    ? await pool.query(
+        'SELECT * FROM urls WHERE id < ? ORDER BY id DESC LIMIT ?',
+        [cursor, limit + 1]
+      )
+    : await pool.query(
+        'SELECT * FROM urls ORDER BY id DESC LIMIT ?',
+        [limit + 1]
+      );
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return {
+    urls: page,
+    nextCursor: hasMore ? page[page.length - 1].id : null
+  };
 }
 
 export async function searchUrls(q) {
-  const pattern = `%${q}%`;
+  const prefix = `${q}%`;
+  const phrase = `"${q}"`;
   const [rows] = await pool.execute(
-    'SELECT * FROM urls WHERE slug LIKE ? OR long_url LIKE ? ORDER BY created_at DESC LIMIT 100',
-    [pattern, pattern]
+    `SELECT * FROM urls
+     WHERE slug LIKE ?
+        OR MATCH(long_url) AGAINST(? IN BOOLEAN MODE)
+     ORDER BY created_at DESC LIMIT 100`,
+    [prefix, phrase]
   );
   return rows;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hashIp } from './utils.js';
+import { hashIp, escapeHtml } from './utils.js';
 
 describe('hashIp', () => {
   it('produces a 64-character hex string', () => {
@@ -33,5 +33,18 @@ describe('hashIp', () => {
     const ip = '192.168.100.200';
     const hash = hashIp(ip, 'salt');
     expect(hash).not.toContain(ip);
+  });
+});
+
+describe('escapeHtml', () => {
+  it('escapes HTML special characters', () => {
+    expect(escapeHtml('<div>')).toBe('&lt;div&gt;');
+    expect(escapeHtml('a & b')).toBe('a &amp; b');
+    expect(escapeHtml('"test"')).toBe('&quot;test&quot;');
+    expect(escapeHtml("'test'")).toBe('&#39;test&#39;');
+  });
+
+  it('leaves normal characters intact', () => {
+    expect(escapeHtml('hello world 123')).toBe('hello world 123');
   });
 });

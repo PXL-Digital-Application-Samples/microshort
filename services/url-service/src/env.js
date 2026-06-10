@@ -16,4 +16,7 @@ export const env = cleanEnv(process.env, {
   URL_RATE_LIMIT_MAX:       str({ default: '30' }),
   PORT:                     str({ default: '3002' }),
   LOG_LEVEL:                str({ default: 'info' }),
+  ALLOWED_ORIGINS:          str({ default: '*' }),
+  URL_SERVICE_TOKEN:        str({ desc: 'Token used by url-service to call analytics' }),
+  ADMIN_SERVICE_TOKEN:      str({ desc: 'Token required for admin calls to url-service' }),
 });

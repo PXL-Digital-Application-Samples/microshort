@@ -6,7 +6,7 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual, createHash } from 'crypto';
 import promClient from 'prom-client';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
@@ -43,7 +43,20 @@ const env = cleanEnv(process.env, {
 
 const ajv = new Ajv();
 addFormats(ajv);
-const validateConfig = ajv.compile(configSchema);
+
+const schema = {
+  ...configSchema,
+  properties: {
+    ...configSchema.properties,
+    domain: {
+      ...configSchema.properties.domain,
+      ...((process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'test') && {
+        pattern: '^https://'
+      })
+    }
+  }
+};
+const validateConfig = ajv.compile(schema);
 
 // In-memory config state. Seeded from env var at startup.
 // PUT /config/domain mutates this at runtime (ephemeral — resets on restart).
@@ -129,9 +142,15 @@ app.get('/config/domain', (req: Request, res: Response): void => {
  *       401:
  *         description: Unauthorized
  */
+function safeTokenEqual(a: string, b: string): boolean {
+  const digest = (s: string) => createHash('sha256').update(s).digest();
+  return timingSafeEqual(digest(a), digest(b));
+}
+
 app.put('/config/domain', (req: Request, res: Response): void => {
   const expected = env.CONFIG_WRITE_TOKEN;
-  if (!expected || req.headers['x-service-token'] !== expected) {
+  const token = (req.headers['x-service-token'] as string) ?? '';
+  if (!expected || !safeTokenEqual(expected, token)) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
@@ -199,15 +218,23 @@ const swaggerSpec = swaggerJsdoc({
     servers: [{ url: `http://localhost:${PORT}` }],
   },
   apis: [
-    isDev
-      ? path.join(__dirname, '../src/server.ts')  // updated to point to server.ts directly
-      : path.join(__dirname, '*.js'),
+    path.join(__dirname, 'server.ts'),
+    path.join(__dirname, 'server.js'),
   ],
 });
+
+// Assert that the Swagger spec has loaded endpoints successfully
+if (!(swaggerSpec as any).paths || Object.keys((swaggerSpec as any).paths).length === 0) {
+  logger.warn('Swagger specification paths are empty. API path configuration may be incorrect.');
+}
 
 // Serve OpenAPI docs at /docs
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-export function __resetConfigCache() { currentDomain = env.DOMAIN; }
+export function __resetConfigCache() {
+  if (process.env.NODE_ENV !== 'production') {
+    currentDomain = env.DOMAIN;
+  }
+}
 
 export default app;

@@ -42,4 +42,31 @@ describe('ConfigService', () => {
       .send({ domain: 'https://evil.test' });
     expect(response.status).toBe(401);
   });
+
+  it('PUT /config/domain should reject http:// domains in non-development environments', async () => {
+    const response = await request(app)
+      .put('/config/domain')
+      .set('X-Service-Token', 'test-write-token')
+      .send({ domain: 'http://insecure.example' });
+    expect(response.status).toBe(400);
+  });
+
+  it('__resetConfigCache should not reset domain in production mode', async () => {
+    const customDomain = 'https://custom.example';
+    await request(app)
+      .put('/config/domain')
+      .set('X-Service-Token', 'test-write-token')
+      .send({ domain: customDomain });
+
+    const originalEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      __resetConfigCache();
+
+      const response = await request(app).get('/config/domain');
+      expect(response.body.domain).toBe(customDomain);
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+  });
 });

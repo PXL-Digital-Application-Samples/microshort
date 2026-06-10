@@ -6,13 +6,15 @@ export const BASE = {
   urls:      'http://localhost:3002',
   redirect:  'http://localhost:8080',
   admin:     'http://localhost:3003',
+  adminUi:   'http://localhost:3004',
   analytics: 'http://localhost:3005',
 };
 
 export function resetDb() {
   try {
+    const URL_DB_PASS = process.env.URL_DB_PASSWORD ?? 'urlpass';
     execSync('docker compose exec -T auth-db psql -U authuser -d auth -c "TRUNCATE users CASCADE"');
-    execSync('docker compose exec -T url-db mysql -u urluser -purlpass -D urlshort -e "TRUNCATE TABLE urls;"');
+    execSync(`docker compose exec -T url-db mysql -u urluser -p${URL_DB_PASS} -D urlshort -e "TRUNCATE TABLE urls;"`);
     execSync('docker compose exec -T redis redis-cli FLUSHALL');
   } catch (err) {
     console.error('Failed to reset databases:', err.message);
