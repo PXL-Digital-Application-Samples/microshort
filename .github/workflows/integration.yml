@@ -19,6 +19,8 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      - name: Copy env configuration
+        run: cp .env.example .env
       - name: Start stack
         run: docker compose up -d --build --wait
         timeout-minutes: 10

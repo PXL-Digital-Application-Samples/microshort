@@ -49,6 +49,7 @@ jobs:
           docker build -t microshort-config-service:latest .
 
       - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -56,8 +57,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tag image
+        if: github.ref == 'refs/heads/main'
         run: docker tag microshort-config-service ghcr.io/pxl-digital-application-samples/microshort-config-service:latest
 
-
       - name: Push image
+        if: github.ref == 'refs/heads/main'
         run: docker push ghcr.io/pxl-digital-application-samples/microshort-config-service:latest
+

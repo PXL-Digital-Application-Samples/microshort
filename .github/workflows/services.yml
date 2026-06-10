@@ -77,7 +77,17 @@ jobs:
 
       - name: Smoke test /health
         run: |
-          docker run -d --name svc -p 127.0.0.1:${{ matrix.port }}:${{ matrix.port }} microshort-${{ matrix.service }}:ci
+          docker run -d --name svc \
+            -e JWT_SECRET=change-me-in-production \
+            -e DB_PASSWORD=change-me-in-production \
+            -e SERVICE_TOKEN=change-me-in-production \
+            -e REDIRECT_SERVICE_TOKEN=change-me-in-production-redirect \
+            -e URL_SERVICE_TOKEN=change-me-in-production-url \
+            -e ADMIN_SERVICE_TOKEN=change-me-in-production-admin \
+            -e IP_HASH_SALT=change-me-in-production \
+            -e CONFIG_WRITE_TOKEN=change-me-in-production \
+            -p 127.0.0.1:${{ matrix.port }}:${{ matrix.port }} \
+            microshort-${{ matrix.service }}:ci
           HEALTHY=false
           for i in $(seq 1 15); do
             if curl -sf http://127.0.0.1:${{ matrix.port }}/health; then
@@ -86,12 +96,17 @@ jobs:
             fi
             sleep 1
           done
-          docker stop svc
           if [ "$HEALTHY" != "true" ]; then
             echo "Health check failed after 15s"
+            docker logs svc
+            docker stop svc
+            docker rm svc
             exit 1
           fi
           echo "Health check passed"
+          docker stop svc
+          docker rm svc
+
 
       - name: Log in to GHCR
         if: github.ref == 'refs/heads/main'
