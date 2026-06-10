@@ -4,5 +4,13 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.js'],
+    env: {
+      NODE_ENV: 'test',
+      DB_PASSWORD: 'test',
+      SERVICE_TOKEN: 'mock-service-token',
+      URL_SERVICE_TOKEN: 'mock-url-service-token',
+      ADMIN_SERVICE_TOKEN: 'mock-admin-service-token',
+      LOG_LEVEL: 'silent',
+    }
   },
 });

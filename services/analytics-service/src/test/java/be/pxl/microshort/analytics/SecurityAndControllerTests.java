@@ -12,8 +12,11 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Map;
 
+import static org.hamcrest.Matchers.anEmptyMap;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
@@ -74,5 +77,35 @@ public class SecurityAndControllerTests {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(content))
                 .andExpect(status().isPayloadTooLarge());
+    }
+
+    @Test
+    public void whenBatchIsEmpty_thenReturns400() throws Exception {
+        mockMvc.perform(post("/events:batch")
+                .header("X-Service-Token", "test-redirect-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("[]"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    public void whenSingleEvent_thenReturns202() throws Exception {
+        Mockito.doNothing().when(clickHouseRepository).insertBatch(Mockito.any());
+
+        mockMvc.perform(post("/events")
+                .header("X-Service-Token", "test-redirect-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"slug\":\"abc\",\"ts\":\"2024-01-01T00:00:00Z\",\"referrer\":\"\",\"userAgent\":\"test\",\"ipHash\":\"hash\"}"))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    public void whenCountsPostWithEmptyList_thenReturns200WithEmptyMap() throws Exception {
+        mockMvc.perform(post("/stats/counts")
+                .header("X-Service-Token", "test-url-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("[]"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", anEmptyMap()));
     }
 }

@@ -399,35 +399,39 @@ app.delete('/auth/api-keys/:keyId', verifyToken, async (req, res) => {
   }
 });
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT }, 'Auth service started');
-});
-
-const shutdown = async (signal) => {
-  logger.info({ signal }, 'Shutdown signal received — draining connections');
-  server.close(async () => {
-    try {
-      await sql.end();
-      logger.info('Postgres connection pool closed');
-    } catch (err) {
-      logger.error({ err }, 'Error closing Postgres connection pool');
-    }
-    try {
-      await redis.quit();
-      logger.info('Redis connection closed');
-    } catch (err) {
-      logger.error({ err }, 'Error closing Redis connection');
-    }
-    logger.info('Auth service shut down cleanly');
-    process.exit(0);
+let server;
+if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(PORT, () => {
+    logger.info({ port: PORT }, 'Auth service started');
   });
-  
-  // Force-quit if graceful drain takes > 30 s
-  setTimeout(() => {
-    logger.error('Shutdown timed out — forcing exit');
-    process.exit(1);
-  }, 30_000).unref();
-};
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
+  const shutdown = async (signal) => {
+    logger.info({ signal }, 'Shutdown signal received — draining connections');
+    server.close(async () => {
+      try {
+        await sql.end();
+        logger.info('Postgres connection pool closed');
+      } catch (err) {
+        logger.error({ err }, 'Error closing Postgres connection pool');
+      }
+      try {
+        await redis.quit();
+        logger.info('Redis connection closed');
+      } catch (err) {
+        logger.error({ err }, 'Error closing Redis connection');
+      }
+      logger.info('Auth service shut down cleanly');
+      process.exit(0);
+    });
+
+    setTimeout(() => {
+      logger.error('Shutdown timed out — forcing exit');
+      process.exit(1);
+    }, 30_000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
+}
+
+export { app };

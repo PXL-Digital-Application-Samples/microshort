@@ -427,4 +427,9 @@ if (process.env.NODE_ENV !== 'test') {
   process.on('SIGINT',  () => shutdown('SIGINT'));
 }
 
+export function __resetDashboardCache() {
+  dashboardCache = null;
+  dashboardCacheExpiry = 0;
+}
+
 export { app, server };

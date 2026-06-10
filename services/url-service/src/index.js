@@ -498,43 +498,48 @@ async function syncClickCounts() {
   }
 }
 
-const syncIntervalId = setInterval(syncClickCounts, CLICK_SYNC_INTERVAL_MS);
+let syncIntervalId;
+let server;
+if (process.env.NODE_ENV !== 'test') {
+  syncIntervalId = setInterval(syncClickCounts, CLICK_SYNC_INTERVAL_MS);
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT }, 'URL service started');
-});
-
-const shutdown = async (signal) => {
-  logger.info({ signal }, 'Shutdown signal received — draining connections');
-  server.close(async () => {
-    try {
-      clearInterval(syncIntervalId);
-      logger.info('Sync interval cleared');
-    } catch (err) {
-      logger.error({ err }, 'Error clearing sync interval');
-    }
-    try {
-      await pool.end();
-      logger.info('MySQL connection pool closed');
-    } catch (err) {
-      logger.error({ err }, 'Error closing MySQL connection pool');
-    }
-    try {
-      await redis.quit();
-      logger.info('Redis connection closed');
-    } catch (err) {
-      logger.error({ err }, 'Error closing Redis connection');
-    }
-    logger.info('URL service shut down cleanly');
-    process.exit(0);
+  server = app.listen(PORT, () => {
+    logger.info({ port: PORT }, 'URL service started');
   });
 
-  // Force-quit if graceful drain takes > 30 s
-  setTimeout(() => {
-    logger.error('Shutdown timed out — forcing exit');
-    process.exit(1);
-  }, 30_000).unref();
-};
+  const shutdown = async (signal) => {
+    logger.info({ signal }, 'Shutdown signal received — draining connections');
+    server.close(async () => {
+      try {
+        clearInterval(syncIntervalId);
+        logger.info('Sync interval cleared');
+      } catch (err) {
+        logger.error({ err }, 'Error clearing sync interval');
+      }
+      try {
+        await pool.end();
+        logger.info('MySQL connection pool closed');
+      } catch (err) {
+        logger.error({ err }, 'Error closing MySQL connection pool');
+      }
+      try {
+        await redis.quit();
+        logger.info('Redis connection closed');
+      } catch (err) {
+        logger.error({ err }, 'Error closing Redis connection');
+      }
+      logger.info('URL service shut down cleanly');
+      process.exit(0);
+    });
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
+    setTimeout(() => {
+      logger.error('Shutdown timed out — forcing exit');
+      process.exit(1);
+    }, 30_000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
+}
+
+export { app };
