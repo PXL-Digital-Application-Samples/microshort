@@ -121,12 +121,11 @@ export function App(van, html) {
                     <h1>Microshort Admin</h1>
                     <p>Enter your admin API key to continue</p>
                     
-                    ${() => error.val && html`<div class="error">${error.val}</div>`}
+                    ${() => error.val ? html`<div class="error">${error.val}</div>` : ''}
                     
-                    <input 
-                        type="password" 
+                    <input
+                        type="password"
                         placeholder="msh_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                        value=${inputKey.val}
                         oninput=${e => inputKey.val = e.target.value}
                         onkeypress=${e => e.key === 'Enter' && handleLogin()}
                     />
@@ -204,8 +203,8 @@ export function App(van, html) {
             ${Navigation()}
             
             <main class="main-content">
-                ${() => error.val && html`<div class="error-banner">${error.val}</div>`}
-                ${() => loading.val && html`<div class="loading">Loading...</div>`}
+                ${() => error.val ? html`<div class="error-banner">${error.val}</div>` : ''}
+                ${() => loading.val ? html`<div class="loading">Loading...</div>` : ''}
                 
                 ${() => {
                     switch(currentView.val) {

@@ -19,10 +19,11 @@
         
         // Initialize htm with VanJS
         const html = htm.bind((tag, props, ...children) => {
+            const flat = children.flat(Infinity);
             if (typeof tag === 'string') {
-                return van.tags[tag](props || {}, ...children);
+                return van.tags[tag](props || {}, ...flat);
             }
-            return tag(props || {}, ...children);
+            return tag(props || {}, ...flat);
         });
         
         // Import app

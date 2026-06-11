@@ -39,35 +39,36 @@ export function Users(van, html, apiCall) {
                 }
                 
                 return html`
-                    <div class="data-table">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Email</th>
-                                    <th>Created</th>
-                                    <th>Role</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${users.val.map(user => html`
+                    <div>
+                        <div class="data-table">
+                            <table>
+                                <thead>
                                     <tr>
-                                        <td>${user.id}</td>
-                                        <td>${user.email}</td>
-                                        <td>${formatDate(user.createdAt)}</td>
-                                        <td>
-                                            <span class=${user.role === 'admin' ? 'badge badge-admin' : 'badge'}>
-                                                ${user.role === 'admin' ? 'Admin' : 'User'}
-                                            </span>
-                                        </td>
+                                        <th>ID</th>
+                                        <th>Email</th>
+                                        <th>Created</th>
+                                        <th>Role</th>
                                     </tr>
-                                `)}
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="table-footer">
-                        Total: ${users.val.length} users
+                                </thead>
+                                <tbody>
+                                    ${users.val.map(user => html`
+                                        <tr>
+                                            <td>${user.id}</td>
+                                            <td>${user.email}</td>
+                                            <td>${formatDate(user.createdAt)}</td>
+                                            <td>
+                                                <span class=${user.role === 'admin' ? 'badge badge-admin' : 'badge'}>
+                                                    ${user.role === 'admin' ? 'Admin' : 'User'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    `)}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="table-footer">
+                            Total: ${users.val.length} users
+                        </div>
                     </div>
                 `;
             }}

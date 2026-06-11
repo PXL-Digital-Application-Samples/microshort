@@ -1,3 +1,11 @@
+const SWAGGER_URLS = {
+    config: 'http://localhost:3000/docs',
+    auth: 'http://localhost:3001/docs',
+    url: 'http://localhost:3002/docs',
+    admin: 'http://localhost:3003/docs',
+    analytics: 'http://localhost:3005/docs',
+};
+
 export function Health(van, html, apiCall) {
     const services = van.state([]);
     const loading = van.state(true);
@@ -69,12 +77,12 @@ export function Health(van, html, apiCall) {
             <div class="page-header">
                 <h1>Service Health</h1>
                 <div class="header-actions">
-                    ${() => lastCheck.val && html`
+                    ${() => lastCheck.val ? html`
                         <span class="last-check">
                             Last check: ${lastCheck.val.toLocaleTimeString()}
                         </span>
-                    `}
-                    <button onclick=${checkHealth} class="refresh-btn" disabled=${loading.val}>
+                    ` : ''}
+                    <button onclick=${checkHealth} class="refresh-btn" disabled=${() => loading.val}>
                         ${() => loading.val ? 'Checking...' : 'Check Now'}
                     </button>
                 </div>
@@ -109,24 +117,29 @@ export function Health(van, html, apiCall) {
                                 <div class=${`service-card ${getStatusClass(service.status)}`}>
                                     <div class="service-header">
                                         <span class="service-icon">${getStatusIcon(service.status)}</span>
-                                        <h3>${service.service.charAt(0).toUpperCase() + service.service.slice(1)} Service</h3>
+                                        <h3>
+                                            ${SWAGGER_URLS[service.service]
+                                                ? html`<a href=${SWAGGER_URLS[service.service]} target="_blank" title="Open Swagger UI">${service.service.charAt(0).toUpperCase() + service.service.slice(1)} Service</a>`
+                                                : `${service.service.charAt(0).toUpperCase() + service.service.slice(1)} Service`
+                                            }
+                                        </h3>
                                     </div>
                                     
                                     <div class="service-status">
                                         Status: <strong>${service.status}</strong>
                                     </div>
                                     
-                                    ${service.error && html`
+                                    ${service.error ? html`
                                         <div class="service-error">
                                             Error: ${service.error}
                                         </div>
-                                    `}
-                                    
-                                    ${service.responseTime && html`
+                                    ` : ''}
+
+                                    ${service.responseTime ? html`
                                         <div class="service-response">
                                             Response time: ${service.responseTime}
                                         </div>
-                                    `}
+                                    ` : ''}
                                 </div>
                             `)}
                         </div>

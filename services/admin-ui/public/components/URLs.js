@@ -82,11 +82,10 @@ export function URLs(van, html, apiCall) {
             <div class="page-header">
                 <h1>URLs</h1>
                 <div class="header-actions">
-                    <input 
-                        type="text" 
-                        placeholder="Search URLs..." 
+                    <input
+                        type="text"
+                        placeholder="Search URLs..."
                         class="search-input"
-                        value=${searchQuery.val}
                         oninput=${e => searchQuery.val = e.target.value}
                     />
                     <button onclick=${loadUrls} class="refresh-btn">
@@ -111,6 +110,7 @@ export function URLs(van, html, apiCall) {
                 }
                 
                 return html`
+                    <div>
                     <div class="data-table">
                         <table>
                             <thead>
@@ -176,6 +176,7 @@ export function URLs(van, html, apiCall) {
                     
                     <div class="table-footer">
                         Showing ${urlsToShow.length} of ${urls.val.length} URLs
+                    </div>
                     </div>
                 `;
             }}

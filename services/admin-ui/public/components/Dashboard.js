@@ -18,7 +18,7 @@ export function Dashboard(van, html, apiCall) {
         <div class="stat-card">
             <h3>${title}</h3>
             <div class="stat-value">${value}</div>
-            ${subtitle && html`<div class="stat-subtitle">${subtitle}</div>`}
+            ${subtitle ? html`<div class="stat-subtitle">${subtitle}</div>` : ''}
         </div>
     `;
     
@@ -54,34 +54,36 @@ export function Dashboard(van, html, apiCall) {
                 const { users, urls } = stats.val;
                 
                 return html`
-                    <div class="stats-grid">
-                        ${StatCard({
-                            title: 'Total Users',
-                            value: users.total,
-                            subtitle: `${users.recentSignups} new this week`
-                        })}
-                        
-                        ${StatCard({
-                            title: 'Total URLs',
-                            value: urls.total,
-                            subtitle: `${urls.recentUrls} created this week`
-                        })}
-                        
-                        ${StatCard({
-                            title: 'Total Clicks',
-                            value: urls.totalClicks,
-                            subtitle: 'All time'
-                        })}
-                        
-                        ${StatCard({
-                            title: 'API Keys',
-                            value: users.totalApiKeys,
-                            subtitle: 'Active keys'
-                        })}
-                    </div>
-                    
-                    <div class="dashboard-content">
-                        ${TopURLsList({ urls: urls.topUrls || [] })}
+                    <div>
+                        <div class="stats-grid">
+                            ${StatCard({
+                                title: 'Total Users',
+                                value: users.total,
+                                subtitle: `${users.recentSignups} new this week`
+                            })}
+
+                            ${StatCard({
+                                title: 'Total URLs',
+                                value: urls.total,
+                                subtitle: `${urls.recentUrls} created this week`
+                            })}
+
+                            ${StatCard({
+                                title: 'Total Clicks',
+                                value: urls.totalClicks,
+                                subtitle: 'All time'
+                            })}
+
+                            ${StatCard({
+                                title: 'API Keys',
+                                value: users.totalApiKeys,
+                                subtitle: 'Active keys'
+                            })}
+                        </div>
+
+                        <div class="dashboard-content">
+                            ${TopURLsList({ urls: urls.topUrls || [] })}
+                        </div>
                     </div>
                 `;
             }}

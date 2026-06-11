@@ -40,13 +40,15 @@ app.use((req, res, next) => {
   const apiBase = process.env.ADMIN_API_URL || 'http://localhost:3003';
   res.setHeader(
     'Content-Security-Policy',
-    `default-src 'self'; connect-src 'self' ${apiBase}; style-src 'self' 'unsafe-inline'; script-src 'self'`
+    `default-src 'self'; connect-src 'self' ${apiBase}; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'`
   );
   next();
 });
 
-// Serve static files from public
-app.use(express.static(join(__dirname, 'public')));
+// Serve static files from public — no caching in dev so fixes are picked up immediately
+app.use(express.static(join(__dirname, 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-store')
+}));
 
 app.get('/health', (_req, res) => res.status(200).send('OK'));
 

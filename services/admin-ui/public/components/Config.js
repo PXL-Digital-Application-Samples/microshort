@@ -64,11 +64,11 @@ export function Config(van, html, apiCall) {
                                 Configure the base domain for short URLs. This affects how URLs are displayed to users.
                             </p>
                             
-                            ${() => message.val && html`
+                            ${() => message.val ? html`
                                 <div class=${message.val.startsWith('Error') ? 'message error' : 'message success'}>
                                     ${message.val}
                                 </div>
-                            `}
+                            ` : ''}
                             
                             <div class="form-group">
                                 <label for="domain">Short URL Domain</label>
