@@ -49,7 +49,8 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
         if (uri.equals("/actuator/health") ||
             uri.startsWith("/actuator/health/") ||
             uri.startsWith("/v3/api-docs") ||
-            uri.startsWith("/docs")) {
+            uri.startsWith("/docs") ||
+            uri.startsWith("/swagger-ui")) {
             chain.doFilter(req, res);
             return;
         }

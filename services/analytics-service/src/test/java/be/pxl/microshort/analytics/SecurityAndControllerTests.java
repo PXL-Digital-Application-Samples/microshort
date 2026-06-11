@@ -140,10 +140,16 @@ public class SecurityAndControllerTests {
     }
 
     @Test
-    public void docsPath_isNotBlockedBySecurityFilter() throws Exception {
-        // SecurityFilter must pass /docs* through so Swagger UI can load in a browser
-        int statusCode = mockMvc.perform(get("/docs")).andReturn().getResponse().getStatus();
-        org.junit.jupiter.api.Assertions.assertNotEquals(401, statusCode,
+    public void swaggerUiAssets_areNotBlockedBySecurityFilter() throws Exception {
+        // The filter must pass /swagger-ui/** through so the browser can load the JS/CSS
+        // after being redirected from /docs. A 401 here breaks the UI even if /docs passes.
+        int docsStatus = mockMvc.perform(get("/docs")).andReturn().getResponse().getStatus();
+        org.junit.jupiter.api.Assertions.assertNotEquals(401, docsStatus,
             "/docs must not be blocked by SecurityFilter");
+
+        int assetsStatus = mockMvc.perform(get("/swagger-ui/swagger-ui-bundle.js"))
+                .andReturn().getResponse().getStatus();
+        org.junit.jupiter.api.Assertions.assertNotEquals(401, assetsStatus,
+            "/swagger-ui/** assets must not be blocked by SecurityFilter");
     }
 }
