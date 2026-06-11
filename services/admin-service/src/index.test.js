@@ -196,6 +196,32 @@ describe('AdminService Endpoints', () => {
       const authStatus = res.body.services.find(s => s.service === 'auth');
       expect(authStatus.status).toBe('unreachable');
     });
+
+    it('includes a numeric responseTime (e.g. "12ms") for reachable services and omits it for unreachable ones', async () => {
+      const mockFetch = vi.spyOn(global, 'fetch');
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ isAdmin: true }) });
+      mockFetch.mockResolvedValueOnce({ ok: true });   // auth healthy
+      mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED')); // url unreachable
+      mockFetch.mockResolvedValueOnce({ ok: true });   // config healthy
+      mockFetch.mockResolvedValueOnce({ ok: true });   // analytics healthy
+
+      const res = await request(app)
+        .get('/admin/health/services')
+        .set('X-API-Key', 'admin-key');
+
+      expect(res.status).toBe(200);
+
+      const reachable = res.body.services.filter(s => s.status !== 'unreachable');
+      reachable.forEach(s => {
+        expect(s).toHaveProperty('responseTime');
+        expect(s.responseTime).toMatch(/^\d+ms$/);
+        expect(s.responseTime).not.toBe('N/A');
+      });
+
+      const unreachable = res.body.services.find(s => s.service === 'url');
+      expect(unreachable.status).toBe('unreachable');
+      expect(unreachable).not.toHaveProperty('responseTime');
+    });
   });
 
   describe('Swagger UI', () => {

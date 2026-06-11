@@ -681,6 +681,10 @@ app.get('/admin/search/urls', validateAdminKey, async (req, res) => {
  *                       status:
  *                         type: string
  *                         enum: [healthy, unhealthy, unreachable]
+ *                       responseTime:
+ *                         type: string
+ *                         example: 12ms
+ *                         description: Round-trip time to the service health endpoint (absent when unreachable)
  *       401:
  *         description: API key missing or invalid
  *       403:
@@ -698,14 +702,16 @@ app.get('/admin/health/services', validateAdminKey, async (req, res) => {
     const healthChecks = await Promise.all(
       services.map(async (service) => {
         try {
+          const start = Date.now();
           const response = await fetch(service.url, {
             headers: { 'x-request-id': req.id },
             signal: AbortSignal.timeout(2000)
           });
+          const responseTime = `${Date.now() - start}ms`;
           return {
             service: service.name,
             status: response.ok ? 'healthy' : 'unhealthy',
-            responseTime: response.headers.get('x-response-time') || 'N/A'
+            responseTime
           };
         } catch (err) {
           return {
