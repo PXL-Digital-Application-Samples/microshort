@@ -6,6 +6,68 @@ For design decisions and rationale see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ---
 
+## What does a URL shortener do?
+
+A URL shortener turns a long, unwieldy link into a short one that redirects to it:
+
+```
+https://github.com/example/really-long-repository-name/blob/main/docs/getting-started.md
+                                  │  shorten
+                                  ▼
+                      http://localhost:8080/xK3f9a
+```
+
+When someone opens the short link, the **redirect-service** looks up where it points and answers with an HTTP **302 redirect** — the browser then loads the original page. Every visit is also recorded as a *click event* for statistics.
+
+### Glossary
+
+| Term | Meaning |
+|------|---------|
+| **Long URL** | The original destination, e.g. `https://example.com/some/very/long/path` |
+| **Slug** | The short identifier at the end of a short link — the `xK3f9a` in `http://localhost:8080/xK3f9a`. Auto-generated (6 random characters) or chosen by the user (`customSlug`, e.g. `my-launch`). Each slug maps to exactly one long URL. |
+| **Short URL** | `<domain>/<slug>` — the domain comes from config-service, the slug from url-service |
+| **Redirect (302)** | The "temporarily moved" HTTP answer that sends a browser from the short URL to the long one. 302 (not 301) so browsers don't cache it — every visit reaches our server and can be counted. |
+| **JWT** | The login token you get from `POST /auth/register` / `/auth/login`. Sent as `Authorization: Bearer <token>`; used for account actions like managing API keys. |
+| **API key** | A long-lived credential (`msh_…`) for scripts and tools, sent as `X-API-Key`. This is what you use to create short URLs — and what the admin dashboard logs in with. Shown once at creation, then only stored as a hash. |
+| **Service token** | A shared secret (`X-Service-Token`) that the services use to talk to *each other* — e.g. redirect-service proving to url-service that a slug lookup is legitimate. Users never send these. |
+| **Click event** | One record per visit (slug, timestamp, referrer, user agent, hashed IP) sent by redirect-service to analytics-service |
+
+### Try it: your first short link
+
+With the stack running (see Quick start below), from a terminal:
+
+```bash
+# 1. Register (the FIRST user automatically becomes admin).
+#    Password must be at least 8 characters. Returns 201 + a JWT token.
+curl -s -X POST http://localhost:3001/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"me@example.com","password":"super-secret-1"}'
+# → {"token":"eyJ...","refreshToken":"...","userId":1}
+
+# 2. Create an API key using that JWT (replace eyJ... with your token).
+#    The msh_... key is shown ONCE — copy it.
+curl -s -X POST http://localhost:3001/auth/api-keys \
+  -H 'Authorization: Bearer eyJ...' \
+  -H 'Content-Type: application/json' -d '{"name":"my first key"}'
+# → {"apiKey":"msh_...","keyId":1,"name":"my first key"}
+
+# 3. Shorten a URL with the API key.
+curl -s -X POST http://localhost:3002/urls \
+  -H 'X-API-Key: msh_...' \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://en.wikipedia.org/wiki/URL_shortening"}'
+# → {"shortUrl":"http://localhost:8080/xK3f9a","slug":"xK3f9a",...}
+
+# 4. Follow it (-I shows the 302 redirect instead of downloading the page).
+curl -I http://localhost:8080/xK3f9a
+# → HTTP/1.1 302 Found
+# → Location: https://en.wikipedia.org/wiki/URL_shortening
+```
+
+Open the short URL in a browser a few times, then log in to the **admin dashboard** at http://localhost:3004 with your `msh_…` API key to see users, URLs, and click statistics (counts sync from analytics about once a minute).
+
+---
+
 ## Services
 
 | Service | Port | Stack | Role |
