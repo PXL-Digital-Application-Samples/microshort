@@ -41,7 +41,13 @@ const ANALYTICS_SERVICE_URL = env.ANALYTICS_SERVICE_URL;
 const SERVICE_TOKEN         = env.SERVICE_TOKEN;
 const ADMIN_SERVICE_TOKEN   = env.ADMIN_SERVICE_TOKEN || SERVICE_TOKEN;
 
-app.set('trust proxy', 1);
+// TRUST_PROXY: hop count ("1"), "true"/"false", or a subnet string.
+function parseTrustProxy(value) {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
+app.set('trust proxy', parseTrustProxy(env.TRUST_PROXY));
 
 app.use(pinoHttp({
   logger,
@@ -279,12 +285,13 @@ app.get('/admin/dashboard', validateAdminKey, async (req, res) => {
     }
   };
 
-  // Update cache
-  dashboardCache    = response;
-  dashboardCacheExpiry = Date.now() + DASHBOARD_CACHE_TTL;
-
-  if (degraded.length > 0) {
-    req.log.warn({ degraded }, 'Dashboard response is partial');
+  // Cache only complete responses — a degraded snapshot would otherwise be
+  // served for the full TTL even after the upstream recovers.
+  if (degraded.length === 0) {
+    dashboardCache       = response;
+    dashboardCacheExpiry = Date.now() + DASHBOARD_CACHE_TTL;
+  } else {
+    req.log.warn({ degraded }, 'Dashboard response is partial — not cached');
   }
 
   res.json(response);
@@ -355,6 +362,17 @@ app.get('/admin/users', validateAdminKey, async (req, res) => {
  *     tags: [Admin]
  *     security:
  *       - apiKey: []
+ *     parameters:
+ *       - in: query
+ *         name: cursor
+ *         schema:
+ *           type: integer
+ *         description: Pagination cursor (URL ID offset, forwarded to url-service)
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
  *     responses:
  *       200:
  *         description: Paginated URL list (proxied from url-service)
@@ -377,7 +395,13 @@ app.get('/admin/users', validateAdminKey, async (req, res) => {
  */
 app.get('/admin/urls', validateAdminKey, async (req, res) => {
   try {
-    const response = await fetch(`${URL_SERVICE_URL}/admin/urls`, {
+    // Forward pagination params so the UI can page past the first 50 URLs
+    const params = new URLSearchParams();
+    if (req.query.cursor) params.set('cursor', req.query.cursor);
+    if (req.query.limit) params.set('limit', req.query.limit);
+    const qs = params.size > 0 ? `?${params}` : '';
+
+    const response = await fetch(`${URL_SERVICE_URL}/admin/urls${qs}`, {
       headers: {
         'X-Service-Token': ADMIN_SERVICE_TOKEN,
         'x-request-id': req.id

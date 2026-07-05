@@ -8,11 +8,11 @@ describe('Happy Path', () => {
   it('should complete the registered user flow with custom URL and redirect', async () => {
     const email = uniqueEmail('happy');
     const regRes = await register(email);
-    expect(regRes.status).toBe(200);
+    expect(regRes.status).toBe(201);
     expect(regRes.token).toBeDefined();
 
     const keyRes = await createApiKey(regRes.token, 'happy-key');
-    expect(keyRes.status).toBe(200);
+    expect(keyRes.status).toBe(201);
     expect(keyRes.apiKey).toMatch(/^msh_/);
 
     const url = 'https://example.com';

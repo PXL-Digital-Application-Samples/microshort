@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { BASE, requireEnv } from './helpers.js';
 
-const CONFIG_URL = 'http://localhost:3000';
+const CONFIG_URL = BASE.config;
 
 describe('M5 — Config-service: env-var driven domain', () => {
   it('GET /config/domain returns a valid domain', async () => {
@@ -20,7 +21,7 @@ describe('M5 — Config-service: env-var driven domain', () => {
 });
 
 describe('M5 — Config-service: Ajv validation on PUT', () => {
-  const writeToken = process.env.CONFIG_WRITE_TOKEN || 'dev-config-token-change-in-production';
+  const writeToken = requireEnv('CONFIG_WRITE_TOKEN');
 
   it('rejects PUT with invalid domain format', async () => {
     const res = await fetch(`${CONFIG_URL}/config/domain`, {
@@ -75,12 +76,12 @@ describe('M5 — Config-service: Ajv validation on PUT', () => {
 
 describe('M5 — Secrets: services handle missing required vars', () => {
   it('auth-service is running (envalid passed all required vars)', async () => {
-    const res = await fetch('http://localhost:3001/health');
+    const res = await fetch(`${BASE.auth}/health`);
     expect(res.status).toBe(200);
   });
 
-  it('redirect-service is running (IP_HASH_SALT and SERVICE_TOKEN validated)', async () => {
-    const res = await fetch('http://localhost:8080/health');
+  it('redirect-service is running (IP_HASH_SALT and REDIRECT_SERVICE_TOKEN validated)', async () => {
+    const res = await fetch(`${BASE.redirect}/health`);
     expect(res.status).toBe(200);
   });
 });

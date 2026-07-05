@@ -48,6 +48,16 @@ describe('M4 — Prometheus metrics', () => {
   }
 });
 
+describe('M4 — analytics-service Prometheus metrics', () => {
+  it('analytics-service /actuator/prometheus returns Prometheus text without a token', async () => {
+    const res = await fetch(`${BASE.analytics}/actuator/prometheus`);
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toMatch(/^# HELP /m);
+    expect(body).toMatch(/^# TYPE /m);
+  });
+});
+
 describe('M4 — X-Request-ID propagation', () => {
   it('echoes X-Request-ID header in auth-service response', async () => {
     const id = 'test-correlation-123';

@@ -20,11 +20,11 @@ See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the CQRS/eventual-consistency c
 
 ## API endpoints
 
-### Public
+### Internal (service token)
 
 #### `GET /urls/:slug`
 
-Resolve a slug to a long URL. Called by redirect-service; no auth required.
+Resolve a slug to a long URL. Called by redirect-service with `X-Service-Token: <REDIRECT_SERVICE_TOKEN>` (admin/legacy tokens are also accepted). Requests without a valid token get 401 — this endpoint must not be publicly reachable, or the slug table becomes enumerable.
 
 ```json
 { "longUrl": "https://example.com/…", "slug": "abc123" }
@@ -85,7 +85,10 @@ URL statistics: total URLs, total clicks (cache from analytics), recent creation
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DB_PASSWORD` | yes | — | MySQL password |
-| `SERVICE_TOKEN` | yes | — | Inter-service auth token for analytics calls |
+| `URL_SERVICE_TOKEN` | yes | — | Token url-service presents to analytics-service |
+| `ADMIN_SERVICE_TOKEN` | yes | — | Token accepted from admin-service |
+| `REDIRECT_SERVICE_TOKEN` | yes | — | Token accepted on slug lookups |
+| `SERVICE_TOKEN` | no | — | Legacy shared token (deprecated, optional) |
 | `DB_HOST` | no | `url-db` | MySQL host |
 | `DB_PORT` | no | `3306` | MySQL port |
 | `DB_NAME` | no | `urlshort` | MySQL database name |

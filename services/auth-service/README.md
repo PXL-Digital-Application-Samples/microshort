@@ -26,7 +26,7 @@ See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the authentication architecture
 
 #### `POST /auth/register`
 
-Register a new user. The first user to register receives the `admin` role; subsequent users receive `user`.
+Register a new user (returns **201**). The email must be a valid address and the password at least 8 characters. The first user to register receives the `admin` role; subsequent users receive `user`.
 
 ```bash
 curl -X POST http://localhost:3001/auth/register \

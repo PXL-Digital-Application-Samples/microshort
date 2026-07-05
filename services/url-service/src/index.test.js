@@ -91,6 +91,37 @@ describe('url-service', () => {
     });
   });
 
+  describe('GET /urls/:slug (internal lookup)', () => {
+    it('returns 401 without a service token', async () => {
+      const res = await request(app).get('/urls/some-slug');
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 401 with a wrong service token', async () => {
+      const res = await request(app)
+        .get('/urls/some-slug')
+        .set('X-Service-Token', 'wrong-token');
+      expect(res.status).toBe(401);
+    });
+
+    it('resolves a slug with the redirect-service token', async () => {
+      getUrlBySlug.mockResolvedValueOnce({ id: 1, slug: 'abc', long_url: 'https://example.com' });
+      const res = await request(app)
+        .get('/urls/abc')
+        .set('X-Service-Token', 'mock-redirect-service-token');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ longUrl: 'https://example.com', slug: 'abc' });
+    });
+
+    it('returns 404 for an unknown slug with a valid token', async () => {
+      getUrlBySlug.mockResolvedValueOnce(null);
+      const res = await request(app)
+        .get('/urls/missing')
+        .set('X-Service-Token', 'mock-redirect-service-token');
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe('DELETE /urls/:slug', () => {
     it('returns 401 when no API key is provided', async () => {
       const res = await request(app).delete('/urls/some-slug');
@@ -124,6 +155,16 @@ describe('url-service', () => {
         .set('X-API-Key', 'msh_' + 'a'.repeat(32));
       expect(res.status).toBe(200);
       expect(res.body.slug).toBe('mine');
+    });
+
+    it('allows an admin to delete another user\'s URL (parity with PUT)', async () => {
+      mockValidApiKey(2, 'admin');
+      getUrlBySlug.mockResolvedValueOnce({ id: 1, slug: 'not-mine', user_id: 1 });
+      deleteUrl.mockResolvedValueOnce({ id: 1 });
+      const res = await request(app)
+        .delete('/urls/not-mine')
+        .set('X-API-Key', 'msh_' + 'a'.repeat(32));
+      expect(res.status).toBe(200);
     });
   });
 

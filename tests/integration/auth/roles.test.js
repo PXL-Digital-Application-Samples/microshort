@@ -9,10 +9,10 @@ describe('Roles', () => {
     // This test assumes a fresh DB. The first registered user is admin.
     const firstRoleEmail = uniqueEmail('firstAdmin');
     const firstReg = await register(firstRoleEmail);
-    expect(firstReg.status).toBe(200);
+    expect(firstReg.status).toBe(201);
 
     const firstKey = await createApiKey(firstReg.token, 'admin-key');
-    expect(firstKey.status).toBe(200);
+    expect(firstKey.status).toBe(201);
 
     const valFirst = await fetch(`${BASE.auth}/auth/validate`, {
       method: 'POST',
@@ -27,10 +27,10 @@ describe('Roles', () => {
     // Second user is regular
     const secondRoleEmail = uniqueEmail('secondUser');
     const secondReg = await register(secondRoleEmail);
-    expect(secondReg.status).toBe(200);
+    expect(secondReg.status).toBe(201);
 
     const secondKey = await createApiKey(secondReg.token, 'user-key');
-    expect(secondKey.status).toBe(200);
+    expect(secondKey.status).toBe(201);
 
     const valSecond = await fetch(`${BASE.auth}/auth/validate`, {
       method: 'POST',

@@ -75,9 +75,11 @@ Three distinct auth patterns are in use, each at a different layer.
 
 ### 1. End-user auth — JWT
 
-`POST /auth/register` and `POST /auth/login` return a JWT signed with `JWT_SECRET`. The JWT encodes `{ userId, role }`. Services that check end-user identity (`/auth/me`, creating API keys) verify this token with `Authorization: Bearer <token>`.
+`POST /auth/register` (201) and `POST /auth/login` (200) return a JWT signed with `JWT_SECRET`. The JWT encodes `{ userId, role }`. Services that check end-user identity (`/auth/me`, creating API keys) verify this token with `Authorization: Bearer <token>`.
 
-Users have a `role` column in PostgreSQL (`user` or `admin`). Role is encoded in the JWT and returned in `getAllUsers`. Admin-only endpoints check `role === 'admin'`.
+Registration validates input: the email must look like an address (`x@y.tld`) and the password must be at least 8 characters. Refresh tokens are stateless (same signing key, `type: refresh` claim) and are deliberately **not** rotated or revocable — server-side session revocation is a documented follow-up exercise, in contrast with API keys, which *are* revocable.
+
+Users have a `role` column in PostgreSQL (`user` or `admin`). Role is encoded in the JWT and returned in `getAllUsers`. Admin-only endpoints check `role === 'admin'`. The first registered user becomes admin.
 
 ### 2. API-key auth — `X-API-Key`
 
@@ -89,7 +91,17 @@ API-key `last_used_at` is updated asynchronously (fire-and-forget) to keep valid
 
 ### 3. Service-to-service auth — `X-Service-Token`
 
-Internal service calls (redirect → analytics, url → analytics, admin → analytics) use a shared `SERVICE_TOKEN` passed as the `X-Service-Token` header. This secret is injected at runtime and must match across all callers and the analytics-service. The analytics-service validates this header on every request via `ServiceTokenFilter`.
+Internal service calls use **per-service tokens** passed as the `X-Service-Token` header, so a leaked token can be rotated without touching every service:
+
+| Token | Held by | Accepted by | Used for |
+|-------|---------|-------------|----------|
+| `REDIRECT_SERVICE_TOKEN` | redirect-service | analytics-service, url-service | click-event ingestion; slug lookups (`GET /urls/:slug`) |
+| `URL_SERVICE_TOKEN` | url-service | analytics-service | click-count sync (`POST /stats/counts`) |
+| `ADMIN_SERVICE_TOKEN` | admin-service | auth-service, url-service, analytics-service | internal stats endpoints, admin URL updates, slug lookups |
+
+All three are **required** (compose `:?` enforcement, envalid without default). The old shared `SERVICE_TOKEN` is deprecated but still accepted by analytics-service and url-service lookups *when set*, so a rolling migration is possible; leave it unset in new deployments. analytics-service validates the header on every request via `ServiceTokenFilter` (multi-token allow-list, fail-closed when empty).
+
+`GET /urls/:slug` on url-service is an **internal** endpoint: it requires a valid service token, otherwise anyone who can reach port 3002 could enumerate the slug → long-URL table.
 
 `CONFIG_WRITE_TOKEN` is a separate secret required to call `PUT /config/domain` on config-service. Admin-service holds this token and forwards it when proxying config updates.
 
@@ -103,7 +115,7 @@ Internal service calls (redirect → analytics, url → analytics, admin → ana
 `GET /urls/:slug` in url-service no longer increments a click counter on lookup. The redirect path is the only place a visit is recorded, via an event emitted to analytics-service. url-service keeps a denormalized `click_count` column that is refreshed by a scheduled pull from `GET /stats/counts` on analytics-service — never written on the hot path. This implements CQRS / eventual consistency and keeps url-service self-sufficient when analytics is down.
 
 **2. Ingestion transport — asynchronous HTTP, batched, fire-and-forget.**
-redirect-service buffers click events in memory and flushes them in batches to `POST /events:batch` on analytics-service. The redirect response is never delayed. The baseline is at-most-once — events can be lost on crash. This is a deliberate teaching tradeoff; swapping the in-process buffer for Redis Streams is a documented scaling exercise.
+redirect-service buffers click events in memory and flushes them in batches to `POST /events:batch` on analytics-service. The redirect response is never delayed. The baseline is at-most-once — events can be lost on crash. The buffer is bounded (`ANALYTICS_MAX_BUFFER`, default 10 000): during a sustained analytics outage the oldest events are dropped rather than growing memory without limit, and drops are counted in the `microshort_redirect_analytics_events_dropped_total` metric. This is a deliberate teaching tradeoff; swapping the in-process buffer for Redis Streams is a documented scaling exercise.
 
 **3. Redirect type — 302 (temporary), `Cache-Control: no-store`.**
 302 ensures every visit reaches redirect-service (making analytics complete) and allows destination URLs to change. A 301 would be cached by browsers and CDNs, silently losing analytics events.
@@ -167,9 +179,11 @@ Redis is shared infrastructure; individual services own distinct key namespaces 
 
 | Namespace | Owner at runtime | Contents |
 |-----------|-----------------|----------|
-| `url:<slug>` | redirect-service | long URL, TTL = 5 minutes |
-| `rl:<ip>:auth` | auth-service | rate-limit counter for `/auth/login` |
-| `rl:<ip>:url` | url-service | rate-limit counter for `POST /urls` |
+| `slug:<slug>` | redirect-service | long URL, TTL = 5 minutes (`CACHE_TTL_SECONDS`) |
+| `rl-auth:<ip>` | auth-service | rate-limit counter for `/auth/register`, `/auth/login`, `/auth/refresh` |
+| `rl-validate:<ip>` | auth-service | rate-limit counter for `POST /auth/validate` |
+| `rl-url:<ip>` | url-service | rate-limit counter for `POST /urls` |
+| `rl-redirect:<ip>` | redirect-service | rate-limit counter for `GET /:slug` |
 
 redirect-service caches URL lookups with a 5-minute TTL and falls back to url-service on miss. Redis being down does not make redirect-service unready (`/ready` always returns 200) because it can still function via origin fallback.
 
@@ -204,10 +218,17 @@ JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
 | `AUTH_DB_PASSWORD` | auth-service, auth-db | PostgreSQL auth |
 | `URL_DB_PASSWORD` | url-service, url-db | MySQL auth |
 | `URL_DB_ROOT_PASSWORD` | url-db | MySQL root setup |
-| `SERVICE_TOKEN` | redirect, url, admin, analytics | Inter-service auth header |
+| `REDIRECT_SERVICE_TOKEN` | redirect, url, analytics | redirect-service's inter-service token |
+| `URL_SERVICE_TOKEN` | url, analytics | url-service's inter-service token |
+| `ADMIN_SERVICE_TOKEN` | admin, auth, url, analytics | admin-service's inter-service token |
+| `SERVICE_TOKEN` (optional, deprecated) | — | Legacy shared inter-service token, accepted when set |
 | `IP_HASH_SALT` | redirect-service | SHA-256 salt for client IP hashing |
 | `CONFIG_WRITE_TOKEN` | config-service, admin-service | Guards `PUT /config/domain` |
 | `CLICKHOUSE_PASSWORD` | analytics-service, clickhouse | ClickHouse auth |
+
+Non-secret deployment knobs: `ALLOWED_ORIGINS` (CORS allow-list for auth/url/admin — restrict to the admin-ui origin in any real deployment; defaults to `*`) and `TRUST_PROXY` (Express `trust proxy` for the rate-limited services — `1` for one proxy hop, `2` behind CloudFront → ALB, `false` when directly exposed).
+
+**Production guard:** when `NODE_ENV=production`, every Node service refuses to start if its secrets still contain `change-me` placeholder values, and analytics-service fails closed (all 401) when no service tokens are configured.
 
 ### config-service
 
@@ -225,7 +246,9 @@ All Node services expose:
 analytics-service (Spring Boot) exposes:
 - `GET /actuator/health/liveness`
 - `GET /actuator/health/readiness` (checks ClickHouse)
-- `GET /actuator/prometheus`
+- `GET /actuator/prometheus` (exempted from the service-token filter, like the Node `/metrics` endpoints)
+
+The `/metrics` and `/actuator/prometheus` endpoints are **unauthenticated by design** (Prometheus scrapes them) — they must only be reachable from the internal network, never from the public internet (see *Deployment exposure* below).
 
 All services use structured JSON logging (pino for Node; ECS-format for Spring Boot) with a `X-Request-ID` propagated across service hops for distributed tracing.
 
@@ -240,6 +263,8 @@ admin-ui is a zero-build-tool single-page app. No bundler, no transpiler, no bui
 - **VanJS 1.6.0** and **htm 3.1.1** are vendored in `services/admin-ui/vendor/` and served from the UI's own static Express server. No CDN dependency.
 - The API base URL is runtime-configurable via the `ADMIN_API_URL` environment variable. `server.js` serves `GET /config.js` which injects `window.ADMIN_API_BASE` into the browser; `app.js` reads this value. This allows the dashboard to work regardless of where admin-service is deployed.
 - All API calls from the browser go through admin-service only — the UI never talks directly to auth-service, url-service, or analytics-service.
+- Authentication is **API-key only** (`X-API-Key`, stored in `localStorage`): the dashboard has no JWT/refresh flow of its own.
+- The Swagger deep-links on the Health page point at `localhost` service ports and are therefore only rendered when the UI itself is served from localhost.
 
 ---
 
@@ -253,6 +278,25 @@ admin-ui is a zero-build-tool single-page app. No bundler, no transpiler, no bui
 
 ---
 
+## Deployment exposure
+
+`compose.yml` publishes service ports to the host for local development convenience. **Do not replicate that pattern 1:1 in cloud security groups.** The split is:
+
+| Exposure | Ports | Services |
+|----------|-------|----------|
+| **Public** | 8080 (or 443 via a TLS proxy) | redirect-service — the only thing visitors need |
+| **Public (admin)** | 3004, 3003 | admin-ui and admin-service — the browser calls admin-service directly, so both must be reachable by admins (restrict by source IP where possible; set `ALLOWED_ORIGINS`) |
+| **Internal only** | 3000, 3001, 3002, 3005 | config-, auth-, url-, analytics-service — service-to-service traffic only. url-service and auth-service also serve the end-user API (`POST /urls`, `/auth/*`); expose them publicly only if that API is part of the exercise, ideally behind the same TLS proxy |
+| **Never public** | 5432, 3306, 6379, 8123 | PostgreSQL, MySQL, Redis, ClickHouse. Redis has **no authentication** — anyone who can reach it can poison the `slug:` cache into an open redirect. Redis and ClickHouse are deliberately not published to the host in `compose.yml` |
+
+Additional rules that only bite outside compose:
+
+- **TLS terminates at a proxy** (ALB, Caddy, nginx, or an ingress controller), never in the services. Set `TRUST_PROXY` to the real hop count so rate limiting sees true client IPs, and set `DOMAIN` to the public `https://` URL.
+- **On EC2, wire services together via private IPs or private DNS** — private IPs survive instance stop/start; public IPs do not. `*_SERVICE_URL` env vars exist exactly for this.
+- **Every service needs a restart policy outside compose** (`restart: unless-stopped` is set in compose; use systemd units or your orchestrator's equivalent elsewhere). analytics-service in particular fails fast when ClickHouse is unreachable at boot and relies on being restarted — under Kubernetes this shows up as a normal CrashLoopBackOff until the database is ready.
+- `/metrics` and `/actuator/prometheus` are unauthenticated; keep them internal.
+- Swagger UIs (`/docs`) are open by design for teaching; on a public deployment, restrict or accept that your API is self-documenting to strangers.
+
 ## Deployment note
 
-Deployment strategy (EC2/Ansible, Kubernetes, Terraform, Docker Swarm) is taught separately using this repo as the application under deployment. This document and the codebase are intentionally deployment-agnostic; no deployment tooling is prescribed here.
+Deployment strategy (EC2/Ansible, Kubernetes, Terraform, Docker Swarm) is taught separately using this repo as the application under deployment. This document and the codebase are intentionally deployment-agnostic; no deployment tooling is prescribed here. `compose.single-service.example.yml` shows how to run one service (plus its datastore) in isolation, as needed for a one-service-per-VM deployment.

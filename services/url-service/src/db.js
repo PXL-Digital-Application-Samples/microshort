@@ -4,7 +4,7 @@ import logger from './logger.js';
 
 export const pool = mysql.createPool({
   host: env.DB_HOST,
-  port: parseInt(env.DB_PORT),
+  port: env.DB_PORT,
   database: env.DB_NAME,
   user: env.DB_USER,
   password: env.DB_PASSWORD,
@@ -110,6 +110,10 @@ export async function getAllUrls({ cursor, limit = 50 } = {}) {
   };
 }
 
+// Two search strategies with different semantics, combined with OR:
+// - slug: prefix LIKE match (short tokens always work)
+// - long_url: FULLTEXT phrase match — tokens shorter than MySQL's
+//   innodb_ft_min_token_size (default 3) are not indexed and won't match.
 export async function searchUrls(q) {
   const escapedQ = q.replace(/[\\%_]/g, '\\$&');
   const prefix = `${escapedQ}%`;

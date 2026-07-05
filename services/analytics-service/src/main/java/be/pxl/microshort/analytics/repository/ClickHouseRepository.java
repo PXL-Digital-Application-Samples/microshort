@@ -59,6 +59,16 @@ public class ClickHouseRepository {
         );
     }
 
+    /** Date-only strings compare against DateTime columns as "YYYY-MM-DD 00:00:00",
+     *  which silently excludes the whole end day. Expand them explicitly. */
+    private static String startOfDay(String date) {
+        return date.length() == 10 ? date + " 00:00:00" : date;
+    }
+
+    private static String endOfDay(String date) {
+        return date.length() == 10 ? date + " 23:59:59" : date;
+    }
+
     public Map<String, Object> getSlugStats(String slug, String from, String to) {
         String sql = "SELECT sum(clicks) AS totalClicks, uniqMerge(uniq_visitors) AS uniqueVisitors " +
             "FROM analytics.clicks_daily WHERE slug = ? AND day BETWEEN toDate(?) AND toDate(?)";
@@ -67,12 +77,12 @@ public class ClickHouseRepository {
         List<Map<String, Object>> referrers = jdbc.queryForList(
             "SELECT referrer, count() AS clicks FROM analytics.clicks " +
             "WHERE slug = ? AND ts BETWEEN ? AND ? GROUP BY referrer ORDER BY clicks DESC LIMIT 20",
-            slug, from, to
+            slug, startOfDay(from), endOfDay(to)
         );
         List<Map<String, Object>> userAgents = jdbc.queryForList(
             "SELECT user_agent AS userAgent, count() AS clicks FROM analytics.clicks " +
             "WHERE slug = ? AND ts BETWEEN ? AND ? GROUP BY user_agent ORDER BY clicks DESC LIMIT 10",
-            slug, from, to
+            slug, startOfDay(from), endOfDay(to)
         );
         stats.put("slug", slug);
         stats.put("referrers", referrers);

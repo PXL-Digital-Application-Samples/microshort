@@ -10,6 +10,7 @@ export default defineConfig({
       SERVICE_TOKEN: 'mock-service-token',
       URL_SERVICE_TOKEN: 'mock-url-service-token',
       ADMIN_SERVICE_TOKEN: 'mock-admin-service-token',
+      REDIRECT_SERVICE_TOKEN: 'mock-redirect-service-token',
       LOG_LEVEL: 'silent',
     }
   },

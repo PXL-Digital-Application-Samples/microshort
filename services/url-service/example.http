@@ -1,6 +1,7 @@
 # URL Service PowerShell Examples
 $baseUrl = "http://localhost:3002"
 $apiKey = "YOUR_API_KEY_HERE"  # Replace with actual API key
+$serviceToken = "YOUR_REDIRECT_SERVICE_TOKEN"  # From .env — only needed for the internal slug lookup (step 3)
 
 Write-Host "=== URL Service Examples ===" -ForegroundColor Cyan
 
@@ -33,10 +34,11 @@ try {
     Write-Host "Custom slug might already exist: $_" -ForegroundColor Yellow
 }
 
-# 3. Get URL by slug (public endpoint)
+# 3. Get URL by slug (internal endpoint — requires a service token)
 Write-Host "`n3. Getting URL details..." -ForegroundColor Yellow
 $getResponse = Invoke-RestMethod -Uri "$baseUrl/urls/$randomSlug" `
-    -Method Get
+    -Method Get `
+    -Headers @{"X-Service-Token"=$serviceToken}
 
 Write-Host "URL found!" -ForegroundColor Green
 Write-Host "Long URL: $($getResponse.longUrl)"

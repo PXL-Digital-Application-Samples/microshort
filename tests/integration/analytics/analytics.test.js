@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { BASE, uniqueEmail, register, createApiKey, createShortUrl, postEvents, getSlugCounts, resetDb } from '../helpers.js';
+import { BASE, uniqueEmail, register, createApiKey, createShortUrl, postEvents, getSlugCounts, resetDb, requireEnv } from '../helpers.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
@@ -82,7 +82,7 @@ describe('Analytics service', () => {
 
   it('GET /stats/overview returns expected shape', async () => {
     const res = await fetch(`${BASE.analytics}/stats/overview`, {
-      headers: { 'X-Service-Token': process.env.SERVICE_TOKEN || 'dev-service-token-change-in-production' }
+      headers: { 'X-Service-Token': requireEnv('ADMIN_SERVICE_TOKEN') }
     });
     expect(res.status).toBe(200);
     const body = await res.json();

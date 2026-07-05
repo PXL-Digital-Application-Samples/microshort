@@ -1,16 +1,24 @@
-const SWAGGER_URLS = {
+// Swagger links only make sense in local development where the service
+// ports are reachable from the browser; hide them elsewhere.
+const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const SWAGGER_URLS = isLocalhost ? {
     config: 'http://localhost:3000/docs',
     auth: 'http://localhost:3001/docs',
     url: 'http://localhost:3002/docs',
     admin: 'http://localhost:3003/docs',
     analytics: 'http://localhost:3005/docs',
-};
+} : {};
+
+// Module-scoped so revisiting the Health view replaces the auto-refresh
+// timer instead of stacking a new interval per visit (VanJS components have
+// no unmount hook to clean up in).
+let refreshIntervalId = null;
 
 export function Health(van, html, apiCall) {
     const services = van.state([]);
     const loading = van.state(true);
     const lastCheck = van.state(null);
-    
+
     // Check health
     const checkHealth = async () => {
         loading.val = true;
@@ -24,27 +32,11 @@ export function Health(van, html, apiCall) {
             loading.val = false;
         }
     };
-    
-    // Auto-refresh every 30 seconds
-    let refreshInterval;
-    const startAutoRefresh = () => {
-        refreshInterval = setInterval(checkHealth, 30000);
-    };
-    
-    const stopAutoRefresh = () => {
-        if (refreshInterval) {
-            clearInterval(refreshInterval);
-        }
-    };
-    
-    // Load on mount and start auto-refresh
+
+    // Load on mount and auto-refresh every 30 seconds
     checkHealth();
-    startAutoRefresh();
-    
-    // Cleanup on unmount (when view changes)
-    van.derive(() => {
-        return () => stopAutoRefresh();
-    });
+    if (refreshIntervalId) clearInterval(refreshIntervalId);
+    refreshIntervalId = setInterval(checkHealth, 30000);
     
     const getStatusIcon = (status) => {
         switch(status) {

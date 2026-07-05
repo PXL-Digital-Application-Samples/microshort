@@ -4,14 +4,10 @@ WORKDIR /build
 
 # Resolve dependencies first (layer cached unless pom.xml changes)
 COPY pom.xml .
-RUN mvn -B dependency:go-offline --no-transfer-progress \
-    -Dmaven.wagon.http.ssl.insecure=true \
-    -Dmaven.wagon.http.ssl.allowall=true
+RUN mvn -B dependency:go-offline --no-transfer-progress
 
 COPY src ./src
-RUN mvn -B package -DskipTests --no-transfer-progress \
-    -Dmaven.wagon.http.ssl.insecure=true \
-    -Dmaven.wagon.http.ssl.allowall=true
+RUN mvn -B package -DskipTests --no-transfer-progress
 
 # --- Runtime stage ---
 FROM eclipse-temurin:21-jre-noble

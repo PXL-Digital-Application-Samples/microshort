@@ -40,7 +40,12 @@ const cacheMisses = new promClient.Counter({
   help: 'Slug cache misses (fetched from url-service)'
 });
 
-const CACHE_TTL_SECONDS = parseInt(env.CACHE_TTL_SECONDS);
+const eventsDropped = new promClient.Counter({
+  name: 'microshort_redirect_analytics_events_dropped_total',
+  help: 'Click events dropped because the analytics buffer was full (at-most-once delivery)'
+});
+
+const CACHE_TTL_SECONDS = env.CACHE_TTL_SECONDS;
 
 const redis = new Redis(env.REDIS_URL, {
   lazyConnect: true,
@@ -58,11 +63,18 @@ const CONFIG_SERVICE_URL = env.CONFIG_SERVICE_URL;
 const ANALYTICS_SERVICE_URL = env.ANALYTICS_SERVICE_URL;
 const SERVICE_TOKEN         = env.SERVICE_TOKEN;
 const IP_HASH_SALT          = env.IP_HASH_SALT;
-const ANALYTICS_BATCH_SIZE  = parseInt(env.ANALYTICS_BATCH_SIZE);
-const ANALYTICS_FLUSH_MS    = parseInt(env.ANALYTICS_FLUSH_MS);
+const ANALYTICS_BATCH_SIZE  = env.ANALYTICS_BATCH_SIZE;
+const ANALYTICS_FLUSH_MS    = env.ANALYTICS_FLUSH_MS;
+const ANALYTICS_MAX_BUFFER  = env.ANALYTICS_MAX_BUFFER;
 
-// Enable trust proxy so req.ip reflects the real client when behind a proxy
-app.set('trust proxy', 1);
+// Trust proxy so req.ip reflects the real client when behind a proxy.
+// TRUST_PROXY: hop count ("1"), "true"/"false", or a subnet string.
+function parseTrustProxy(value) {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
+app.set('trust proxy', parseTrustProxy(env.TRUST_PROXY));
 
 app.use((req, res, next) => {
   res.setHeader(
@@ -131,6 +143,7 @@ async function getRedirectUrl(slug, reqLog, reqId) {
   try {
     const response = await fetch(`${URL_SERVICE_URL}/urls/${slug}`, {
       headers: {
+        'X-Service-Token': env.REDIRECT_SERVICE_TOKEN || SERVICE_TOKEN,
         'x-request-id': reqId
       },
       signal: AbortSignal.timeout(2000)
@@ -160,6 +173,14 @@ function bufferEvent(slug, userAgent, referer, ip) {
     userAgent: userAgent  || '',
     ipHash:    hashIp(ip, IP_HASH_SALT)
   });
+  // Bound the buffer: under a sustained analytics outage we drop the oldest
+  // events rather than grow without limit (delivery is at-most-once anyway).
+  if (eventBuffer.length > ANALYTICS_MAX_BUFFER) {
+    const overflow = eventBuffer.length - ANALYTICS_MAX_BUFFER;
+    eventBuffer.splice(0, overflow);
+    eventsDropped.inc(overflow);
+    logger.warn({ dropped: overflow, max: ANALYTICS_MAX_BUFFER }, 'Analytics buffer full — dropped oldest events');
+  }
   if (eventBuffer.length >= ANALYTICS_BATCH_SIZE) {
     flushEvents().catch(err => logger.error({ err }, 'Buffered analytics flush failed'));
   }
@@ -186,7 +207,13 @@ async function flushEvents() {
     }
     logger.info({ job: 'analytics-flush', jobId }, 'Flush complete');
   } catch (err) {
+    // Return the batch for retry, still respecting the buffer bound.
     eventBuffer.unshift(...batch);
+    if (eventBuffer.length > ANALYTICS_MAX_BUFFER) {
+      const overflow = eventBuffer.length - ANALYTICS_MAX_BUFFER;
+      eventBuffer.splice(0, overflow);
+      eventsDropped.inc(overflow);
+    }
     logger.error({ job: 'analytics-flush', jobId, err }, 'Analytics flush failed, batch returned to buffer');
   }
 }

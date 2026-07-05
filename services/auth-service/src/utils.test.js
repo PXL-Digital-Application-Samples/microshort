@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hashKey, isValidApiKeyFormat } from './utils.js';
+import { hashKey, isValidApiKeyFormat, isValidEmail, isValidPassword } from './utils.js';
 
 describe('hashKey', () => {
   it('produces a 64-character hex string', () => {
@@ -38,5 +38,45 @@ describe('isValidApiKeyFormat', () => {
     expect(isValidApiKeyFormat(null)).toBe(false);
     expect(isValidApiKeyFormat(undefined)).toBe(false);
     expect(isValidApiKeyFormat(42)).toBe(false);
+  });
+});
+
+describe('isValidEmail', () => {
+  it('accepts a normal email address', () => {
+    expect(isValidEmail('user@example.com')).toBe(true);
+    expect(isValidEmail('a.b+tag@sub.domain.co')).toBe(true);
+  });
+
+  it('rejects strings without an @ or domain dot', () => {
+    expect(isValidEmail('not-an-email')).toBe(false);
+    expect(isValidEmail('user@localhost')).toBe(false);
+    expect(isValidEmail('@example.com')).toBe(false);
+  });
+
+  it('rejects emails with whitespace', () => {
+    expect(isValidEmail('user name@example.com')).toBe(false);
+  });
+
+  it('rejects non-string values and overlong addresses', () => {
+    expect(isValidEmail(null)).toBe(false);
+    expect(isValidEmail(undefined)).toBe(false);
+    expect(isValidEmail(`${'a'.repeat(250)}@example.com`)).toBe(false);
+  });
+});
+
+describe('isValidPassword', () => {
+  it('accepts a password of at least 8 characters', () => {
+    expect(isValidPassword('12345678')).toBe(true);
+    expect(isValidPassword('Test-pass-123!')).toBe(true);
+  });
+
+  it('rejects passwords shorter than 8 characters', () => {
+    expect(isValidPassword('x')).toBe(false);
+    expect(isValidPassword('1234567')).toBe(false);
+  });
+
+  it('rejects non-string values', () => {
+    expect(isValidPassword(null)).toBe(false);
+    expect(isValidPassword(12345678)).toBe(false);
   });
 });

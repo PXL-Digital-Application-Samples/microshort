@@ -5,7 +5,7 @@ const isRateLimitRun = process.argv.some(arg => arg.includes('rate-limiting'));
 export default defineConfig({
   test: {
     include: ['tests/integration/**/*.test.js'],
-    exclude: isRateLimitRun ? [] : ['tests/integration/m2/rate-limiting.test.js'],  // run separately via test:e2e:rate
+    exclude: isRateLimitRun ? [] : ['tests/integration/auth/rate-limiting.test.js'],  // run separately via test:e2e:rate
     globalSetup: 'tests/integration/setup.js',
     setupFiles: ['tests/integration/env-setup.js'],
     testTimeout: 20_000, // increased timeout for sleep steps in rate-limiting

@@ -41,23 +41,39 @@ const env = cleanEnv(process.env, {
   LOG_LEVEL:          str({ default: 'info' }),
 });
 
+// Refuse to boot with placeholder secrets outside local development.
+if (process.env.NODE_ENV === 'production' && env.CONFIG_WRITE_TOKEN.includes('change-me')) {
+  throw new Error('Refusing to start in production with placeholder secret: CONFIG_WRITE_TOKEN');
+}
+
 const ajv = new Ajv();
 addFormats(ajv);
 
+// Compile each schema variant once and cache it — Ajv compilation is
+// expensive and must not run per request. Keyed by mode because tests
+// toggle NODE_ENV at runtime.
+const compiledValidators = new Map<string, ReturnType<typeof ajv.compile>>();
+
 function getValidateConfig() {
-  const schema = {
-    ...configSchema,
-    properties: {
-      ...configSchema.properties,
-      domain: {
-        ...configSchema.properties.domain,
-        ...((process.env.NODE_ENV === 'production') && {
-          pattern: '^https://'
-        })
+  const mode = process.env.NODE_ENV === 'production' ? 'production' : 'development';
+  let validator = compiledValidators.get(mode);
+  if (!validator) {
+    const schema = {
+      ...configSchema,
+      properties: {
+        ...configSchema.properties,
+        domain: {
+          ...configSchema.properties.domain,
+          ...((mode === 'production') && {
+            pattern: '^https://'
+          })
+        }
       }
-    }
-  };
-  return ajv.compile(schema);
+    };
+    validator = ajv.compile(schema);
+    compiledValidators.set(mode, validator);
+  }
+  return validator;
 }
 
 // In-memory config state. Seeded from env var at startup.

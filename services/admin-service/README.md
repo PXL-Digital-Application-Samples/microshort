@@ -75,7 +75,8 @@ Health status of all upstream services (auth, url, config, analytics, redis).
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SERVICE_TOKEN` | yes | — | Inter-service auth token for analytics calls |
+| `ADMIN_SERVICE_TOKEN` | yes | — | Token presented to auth/url/analytics internal endpoints |
+| `SERVICE_TOKEN` | no | — | Legacy shared token (deprecated, optional) |
 | `CONFIG_WRITE_TOKEN` | yes | — | Token forwarded to config-service for domain updates |
 | `AUTH_SERVICE_URL` | no | `http://auth-service:3001` | Auth service base URL |
 | `URL_SERVICE_URL` | no | `http://url-service:3002` | URL service base URL |

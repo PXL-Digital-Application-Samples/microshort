@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { env } from './env.js';
+import { isValidEmail, isValidPassword, PASSWORD_MIN_LENGTH } from './utils.js';
 import { createUser, findUserByEmail, getUserById, createApiKey, validateApiKey, getUserApiKeys, revokeApiKey, getAllUsers, getAuthStats, checkHealth, sql } from './db.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -64,8 +65,14 @@ const app = express();
 const PORT = env.PORT;
 const JWT_SECRET = env.JWT_SECRET;
 
-// Enable trust proxy for rate limiting if behind a reverse proxy
-app.set('trust proxy', 1);
+// Trust proxy setting for rate limiting behind reverse proxies.
+// TRUST_PROXY: hop count ("1"), "true"/"false", or a subnet string.
+function parseTrustProxy(value) {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
+app.set('trust proxy', parseTrustProxy(env.TRUST_PROXY));
 
 app.use(pinoHttp({
   logger,
@@ -100,8 +107,8 @@ app.use((req, res, next) => {
 
 // Rate limiter for authentication routes
 const authLimiter = rateLimit({
-  windowMs: parseInt(env.LOGIN_RATE_LIMIT_WINDOW_MS),
-  limit:    parseInt(env.LOGIN_RATE_LIMIT_MAX),
+  windowMs: env.LOGIN_RATE_LIMIT_WINDOW_MS,
+  limit:    env.LOGIN_RATE_LIMIT_MAX,
   standardHeaders: 'draft-6',
   legacyHeaders: false,
   passOnStoreError: true,
@@ -241,10 +248,10 @@ app.get('/metrics', async (req, res) => {
  *                 example: user@example.com
  *               password:
  *                 type: string
- *                 minLength: 1
- *                 example: "s3cr3t"
+ *                 minLength: 8
+ *                 example: "correct-horse-battery"
  *     responses:
- *       200:
+ *       201:
  *         description: Registration successful
  *         content:
  *           application/json:
@@ -258,7 +265,7 @@ app.get('/metrics', async (req, res) => {
  *                 userId:
  *                   type: integer
  *       400:
- *         description: Email or password missing
+ *         description: Email or password missing, email malformed, or password shorter than 8 characters
  *       409:
  *         description: Email already in use
  *       429:
@@ -271,13 +278,19 @@ app.post('/auth/register', authLimiter, async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' });
     }
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+    if (!isValidPassword(password)) {
+      return res.status(400).json({ error: `Password must be at least ${PASSWORD_MIN_LENGTH} characters` });
+    }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await createUser(email, passwordHash);
 
     const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
     const refreshToken = jwt.sign({ userId: user.id, type: 'refresh' }, JWT_SECRET, { expiresIn: env.REFRESH_TOKEN_EXPIRES_IN });
-    res.json({ token, refreshToken, userId: user.id });
+    res.status(201).json({ token, refreshToken, userId: user.id });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Email already exists' });
@@ -606,7 +619,7 @@ app.get('/internal/admin/stats', requireServiceToken, async (req, res) => {
  *                 type: string
  *                 example: My CLI key
  *     responses:
- *       200:
+ *       201:
  *         description: API key created
  *         content:
  *           application/json:
@@ -627,7 +640,7 @@ app.post('/auth/api-keys', verifyToken, async (req, res) => {
     const { name } = req.body;
     const apiKey = await createApiKey(req.user.userId, name || 'Unnamed key');
 
-    res.json({
+    res.status(201).json({
       apiKey: apiKey.key,
       keyId: apiKey.id,
       name: apiKey.name

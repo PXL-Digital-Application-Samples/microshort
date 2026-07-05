@@ -130,14 +130,23 @@ Black-box tests against the live running stack. Require the full Docker stack to
 ```bash
 npm install           # install vitest at root
 npm test              # run default suite (excludes rate-limiting)
-npm run test:auth          # API keys, roles, config auth, rate-limit happy path
-npm run test:analytics     # click event ingestion and statistics
+npm run test:auth          # tests/integration/auth — API keys, roles, config auth
+npm run test:analytics     # tests/integration/analytics — click ingestion and statistics
 npm run test:observability # readiness, Prometheus metrics, request-ID propagation, Redis cache
 npm run test:config        # config-service domain, Ajv validation, secrets/env validation
 npm run test:admin-ui      # admin-ui runtime config, vendored libs, camelCase consistency
 npm run test:e2e      # fresh stack (down -v → up --wait) then full suite
 npm run test:e2e:rate # fresh stack with rate-limit overrides then rate-limit suite
 ```
+
+The suite targets `localhost` by default, but every base URL can be overridden so the same tests double as a post-deployment smoke test:
+
+```bash
+BASE_URL_REDIRECT=https://sho.rt BASE_URL_AUTH=https://auth.internal:3001 \
+BASE_URL_ADMIN=https://admin-api.sho.rt SKIP_DB_RESET=true npm test
+```
+
+(`SKIP_DB_RESET=true` disables the local `docker compose exec` database resets, which only work against the local stack.)
 
 ### Service-level unit tests
 

@@ -28,6 +28,11 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
             .map(String::trim)
             .filter(s -> !s.isBlank())
             .collect(Collectors.toSet());
+        if (allowedTokens.isEmpty()) {
+            // Fail closed: with no tokens configured every request gets 401.
+            logger.warn("service.allowed-tokens is empty — all authenticated endpoints will return 401. "
+                + "Set REDIRECT_SERVICE_TOKEN / URL_SERVICE_TOKEN / ADMIN_SERVICE_TOKEN.");
+        }
     }
 
     private boolean safeTokenEqual(String a, String b) {
@@ -46,8 +51,11 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
                                     FilterChain chain) throws ServletException, IOException {
         String uri = req.getRequestURI();
+        // /actuator/prometheus is open like the Node services' /metrics —
+        // never expose this port publicly (see ARCHITECTURE.md, deployment exposure).
         if (uri.equals("/actuator/health") ||
             uri.startsWith("/actuator/health/") ||
+            uri.equals("/actuator/prometheus") ||
             uri.startsWith("/v3/api-docs") ||
             uri.startsWith("/docs") ||
             uri.startsWith("/swagger-ui")) {

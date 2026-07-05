@@ -1,5 +1,9 @@
 #!/bin/bash
 # Smoke test: checks for known VanJS rendering bugs in source + validates API
+#
+# Usage:
+#   ./test-ui.sh               # source checks + live API checks (stack must be up)
+#   ./test-ui.sh --source-only # static source checks only (used by CI)
 
 PASS=0
 FAIL=0
@@ -30,6 +34,13 @@ COUNT=$(grep -rn "\${.*\($BOOL_STATES\).*}" services/admin-ui/public/components/
   | grep -v '[=?]' | grep -v '=>' | wc -l)
 check "No raw boolean state used as template child" "$([ $COUNT -eq 0 ] && echo 0 || echo 1)"
 [ $COUNT -gt 0 ] && grep -rn "\${.*\($BOOL_STATES\).*}" services/admin-ui/public/components/ services/admin-ui/public/app.js | grep -v '[=?]' | grep -v '=>'
+
+if [ "$1" = "--source-only" ]; then
+    echo ""
+    echo "=== Results: $PASS passed, $FAIL failed ==="
+    [ $FAIL -eq 0 ] && exit 0 || exit 1
+fi
+
 echo ""
 echo "=== API smoke tests ==="
 

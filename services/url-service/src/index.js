@@ -66,10 +66,16 @@ const AUTH_SERVICE_URL = env.AUTH_SERVICE_URL;
 const CONFIG_SERVICE_URL = env.CONFIG_SERVICE_URL;
 const ANALYTICS_SERVICE_URL = env.ANALYTICS_SERVICE_URL;
 const SERVICE_TOKEN         = env.SERVICE_TOKEN;
-const CLICK_SYNC_INTERVAL_MS = parseInt(env.CLICK_SYNC_INTERVAL_MS);
+const CLICK_SYNC_INTERVAL_MS = env.CLICK_SYNC_INTERVAL_MS;
 
-// Enable trust proxy for rate limiting if behind a reverse proxy
-app.set('trust proxy', 1);
+// Trust proxy setting for rate limiting behind reverse proxies.
+// TRUST_PROXY: hop count ("1"), "true"/"false", or a subnet string.
+function parseTrustProxy(value) {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
+app.set('trust proxy', parseTrustProxy(env.TRUST_PROXY));
 
 app.use(pinoHttp({
   logger,
@@ -104,8 +110,8 @@ app.use((req, res, next) => {
 
 // Rate limiter for URL creation
 const urlCreateLimiter = rateLimit({
-  windowMs: parseInt(env.URL_RATE_LIMIT_WINDOW_MS),
-  limit:    parseInt(env.URL_RATE_LIMIT_MAX),
+  windowMs: env.URL_RATE_LIMIT_WINDOW_MS,
+  limit:    env.URL_RATE_LIMIT_MAX,
   standardHeaders: 'draft-6',
   legacyHeaders: false,
   passOnStoreError: true,
@@ -141,16 +147,35 @@ async function getDomain(reqId) {
     cacheTime = Date.now();
     return cachedDomain;
   } catch (err) {
+    // Serve the stale value when config-service is briefly unavailable —
+    // an expired cache entry is still better than failing the request.
+    if (cachedDomain) {
+      logger.warn({ err }, 'Config service unavailable — serving stale domain');
+      return cachedDomain;
+    }
     logger.error({ err }, 'Failed to get domain');
     throw new Error('Configuration service unavailable');
   }
 }
 
+function safeTokenEqual(a, b) {
+  const digest = (s) => createHash('sha256').update(s).digest();
+  return timingSafeEqual(digest(a), digest(b));
+}
+
+// admin-service calls url-service with its service token instead of an API
+// key. Such calls act as a synthetic admin user (id 0 owns no URLs).
+const SERVICE_CALLER = Object.freeze({ id: 0, role: 'admin' });
+
+function hasAdminServiceToken(req) {
+  const serviceToken = req.headers['x-service-token'];
+  return Boolean(serviceToken && env.ADMIN_SERVICE_TOKEN && safeTokenEqual(env.ADMIN_SERVICE_TOKEN, serviceToken));
+}
+
 // Validate API key middleware
 async function validateApiKey(req, res, next) {
-  const serviceToken = req.headers['x-service-token'];
-  if (serviceToken && env.ADMIN_SERVICE_TOKEN && safeTokenEqual(env.ADMIN_SERVICE_TOKEN, serviceToken)) {
-    req.user = { id: 0, role: 'admin' };
+  if (hasAdminServiceToken(req)) {
+    req.user = { ...SERVICE_CALLER };
     return next();
   }
 
@@ -184,44 +209,36 @@ async function validateApiKey(req, res, next) {
   }
 }
 
-// Require admin API key middleware
-async function requireAdminApiKey(req, res, next) {
-  const serviceToken = req.headers['x-service-token'];
-  if (serviceToken && env.ADMIN_SERVICE_TOKEN && safeTokenEqual(env.ADMIN_SERVICE_TOKEN, serviceToken)) {
-    req.admin = { id: 0, role: 'admin' };
-    req.user = { id: 0, role: 'admin' };
-    return next();
-  }
-
-  const apiKey = req.headers['x-api-key'];
-  if (!apiKey) return res.status(401).json({ error: 'API key required' });
-  try {
-    const response = await fetch(`${AUTH_SERVICE_URL}/auth/validate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-request-id': req.id },
-      body: JSON.stringify({ apiKey }),
-      signal: AbortSignal.timeout(2000)
-    });
-    if (!response.ok) return res.status(401).json({ error: 'Invalid API key' });
-    const data = await response.json();
-    if (!data.isAdmin) return res.status(403).json({ error: 'Admin access required' });
-    req.admin = { id: data.userId, role: data.role };
+// Require admin API key middleware: same validation as validateApiKey plus a
+// role check, so the two cannot drift apart.
+function requireAdminApiKey(req, res, next) {
+  validateApiKey(req, res, () => {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    req.admin = req.user;
     next();
-  } catch (err) {
-    req.log.error({ err }, 'Admin auth validation error');
-    res.status(503).json({ error: 'Authentication service unavailable' });
-  }
-}
-
-function safeTokenEqual(a, b) {
-  const digest = (s) => createHash('sha256').update(s).digest();
-  return timingSafeEqual(digest(a), digest(b));
+  });
 }
 
 // Require service token middleware
 function requireServiceToken(req, res, next) {
   const token = req.headers['x-service-token'] ?? '';
   if (!env.ADMIN_SERVICE_TOKEN || !safeTokenEqual(env.ADMIN_SERVICE_TOKEN, token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+// Slug lookups are internal: only redirect-service (and admin tooling) may
+// resolve slug → long URL. Without this, anyone who can reach port 3002 can
+// enumerate the full slug table.
+const LOOKUP_TOKENS = [env.REDIRECT_SERVICE_TOKEN, env.ADMIN_SERVICE_TOKEN, env.SERVICE_TOKEN]
+  .filter(Boolean);
+
+function requireLookupToken(req, res, next) {
+  const token = req.headers['x-service-token'] ?? '';
+  if (!token || !LOOKUP_TOKENS.some(expected => safeTokenEqual(expected, token))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
@@ -346,30 +363,34 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
 
     // Generate or validate slug
     let slug = customSlug;
-    if (!slug) {
-      slug = nanoid(6); // 6 character random slug
-    } else {
-      // Validate custom slug
-      if (!isValidSlug(slug)) {
-        return res.status(400).json({ error: 'Invalid slug format' });
-      }
+    if (slug && !isValidSlug(slug)) {
+      return res.status(400).json({ error: 'Invalid slug format' });
     }
 
-    // Check if slug already exists
-    const existing = await getUrlBySlug(slug);
-    if (existing) {
-      return res.status(409).json({ error: 'Slug already in use' });
-    }
-
-    // Create URL
-    let urlRecord;
-    try {
-      urlRecord = await createUrl(req.user.id, url, slug);
-    } catch (err) {
-      if (err.code === 'ER_DUP_ENTRY' || err.errno === 1062) {
+    // Check if a custom slug already exists (auto slugs retry on collision below)
+    if (slug) {
+      const existing = await getUrlBySlug(slug);
+      if (existing) {
         return res.status(409).json({ error: 'Slug already in use' });
       }
-      throw err;
+    }
+
+    // Create URL. The UNIQUE index on slug is the real duplicate guard; for
+    // auto-generated slugs a collision just means "roll again".
+    const MAX_SLUG_ATTEMPTS = 3;
+    let urlRecord;
+    for (let attempt = 1; !urlRecord; attempt++) {
+      const candidate = slug ?? nanoid(6);
+      try {
+        urlRecord = await createUrl(req.user.id, url, candidate);
+        slug = candidate;
+      } catch (err) {
+        if (err.code !== 'ER_DUP_ENTRY' && err.errno !== 1062) throw err;
+        if (customSlug || attempt >= MAX_SLUG_ATTEMPTS) {
+          return res.status(409).json({ error: 'Slug already in use' });
+        }
+        req.log.warn({ candidate, attempt }, 'Auto-slug collision — retrying');
+      }
     }
     const domain = await getDomain(req.id);
 
@@ -392,8 +413,10 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
  * @openapi
  * /urls/{slug}:
  *   get:
- *     summary: Look up a slug (used by redirect-service)
+ *     summary: Look up a slug (internal — used by redirect-service)
  *     tags: [URLs]
+ *     security:
+ *       - serviceToken: []
  *     parameters:
  *       - in: path
  *         name: slug
@@ -412,10 +435,12 @@ app.post('/urls', urlCreateLimiter, validateApiKey, async (req, res) => {
  *                   type: string
  *                 slug:
  *                   type: string
+ *       401:
+ *         description: Service token missing or invalid
  *       404:
  *         description: Slug not found
  */
-app.get('/urls/:slug', async (req, res) => {
+app.get('/urls/:slug', requireLookupToken, async (req, res) => {
   try {
     const { slug } = req.params;
     const urlRecord = await getUrlBySlug(slug);
@@ -524,7 +549,7 @@ app.get('/urls', validateApiKey, async (req, res) => {
  *       401:
  *         description: API key missing or invalid
  *       403:
- *         description: URL belongs to a different user
+ *         description: URL belongs to a different user (admins may delete any URL)
  *       404:
  *         description: URL not found
  */
@@ -536,13 +561,13 @@ app.delete('/urls/:slug', validateApiKey, async (req, res) => {
       return res.status(400).json({ error: 'Invalid slug format' });
     }
 
-    // Check ownership
+    // Check ownership (admins may delete any URL, mirroring PUT /urls/:slug)
     const urlRecord = await getUrlBySlug(slug);
     if (!urlRecord) {
       return res.status(404).json({ error: 'URL not found' });
     }
 
-    if (urlRecord.user_id !== req.user.id) {
+    if (urlRecord.user_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Forbidden' });
     }
 

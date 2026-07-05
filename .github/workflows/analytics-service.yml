@@ -37,8 +37,12 @@ jobs:
 
       - name: Tag image
         if: github.ref == 'refs/heads/main'
-        run: docker tag microshort-analytics:ci ghcr.io/pxl-digital-application-samples/microshort-analytics-service:latest
+        run: |
+          docker tag microshort-analytics:ci ghcr.io/pxl-digital-application-samples/microshort-analytics-service:latest
+          docker tag microshort-analytics:ci ghcr.io/pxl-digital-application-samples/microshort-analytics-service:${{ github.sha }}
 
       - name: Push image
         if: github.ref == 'refs/heads/main'
-        run: docker push ghcr.io/pxl-digital-application-samples/microshort-analytics-service:latest
+        run: |
+          docker push ghcr.io/pxl-digital-application-samples/microshort-analytics-service:latest
+          docker push ghcr.io/pxl-digital-application-samples/microshort-analytics-service:${{ github.sha }}

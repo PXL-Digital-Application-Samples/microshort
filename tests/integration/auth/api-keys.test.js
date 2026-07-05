@@ -8,11 +8,11 @@ describe('API Keys', () => {
   it('should support create, hide, validate and revoke flow', async () => {
     const email = uniqueEmail('keytest');
     const regRes = await register(email);
-    expect(regRes.status).toBe(200);
+    expect(regRes.status).toBe(201);
 
     // key returned once
     const keyRes = await createApiKey(regRes.token, 'key-to-revoke');
-    expect(keyRes.status).toBe(200);
+    expect(keyRes.status).toBe(201);
     const rawKey = keyRes.apiKey;
     const keyId = keyRes.keyId;
     expect(rawKey).toMatch(/^msh_/);

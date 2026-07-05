@@ -16,76 +16,32 @@ export function App(van, html) {
     // API base URL
     const API_BASE = window.ADMIN_API_BASE || 'http://localhost:3003';
     
-    // API helper
+    // API helper. Auth is API-key only, and every call goes through
+    // admin-service (the UI never talks to other services directly).
     const apiCall = async (endpoint, options = {}) => {
         if (!apiKey.val) {
             throw new Error('No API key');
         }
-        
+
         loading.val = true;
         error.val = '';
-        
-        try {
-            let headers = {
-                'X-API-Key': apiKey.val,
-                'Content-Type': 'application/json',
-                ...options.headers
-            };
-            
-            const jwtToken = localStorage.getItem('token');
-            if (jwtToken) {
-                headers['Authorization'] = `Bearer ${jwtToken}`;
-            }
 
-            let response = await fetch(`${API_BASE}${endpoint}`, {
+        try {
+            const response = await fetch(`${API_BASE}${endpoint}`, {
                 ...options,
-                headers
-            });
-            
-            if (response.status === 401) {
-                const refreshToken = localStorage.getItem('refreshToken');
-                if (refreshToken) {
-                    try {
-                        const authBase = window.ADMIN_API_BASE ? window.ADMIN_API_BASE.replace(':3003', ':3001') : 'http://localhost:3001';
-                        const refreshRes = await fetch(`${authBase}/auth/refresh`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ refreshToken })
-                        });
-                        
-                        if (refreshRes.ok) {
-                            const data = await refreshRes.json();
-                            localStorage.setItem('token', data.token);
-                            headers['Authorization'] = `Bearer ${data.token}`;
-                            
-                            // Retry the request
-                            response = await fetch(`${API_BASE}${endpoint}`, {
-                                ...options,
-                                headers
-                            });
-                        } else {
-                            localStorage.removeItem('token');
-                            localStorage.removeItem('refreshToken');
-                        }
-                    } catch (err) {
-                        console.error('Failed to refresh token', err);
-                    }
+                headers: {
+                    'X-API-Key': apiKey.val,
+                    'Content-Type': 'application/json',
+                    ...options.headers
                 }
-            }
-            
+            });
+
             if (!response.ok) {
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
                 throw new Error(data.error || 'API request failed');
             }
-            
-            const data = await response.json();
-            if (data.token) {
-                localStorage.setItem('token', data.token);
-            }
-            if (data.refreshToken) {
-                localStorage.setItem('refreshToken', data.refreshToken);
-            }
-            return data;
+
+            return await response.json();
         } catch (err) {
             error.val = err.message;
             throw err;

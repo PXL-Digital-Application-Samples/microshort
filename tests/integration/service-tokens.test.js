@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { BASE } from './helpers.js';
+import { BASE, requireEnv } from './helpers.js';
 
 describe('M12 — Per-Service Tokens Security', () => {
-  // Use the default dev tokens configured in compose.yml/env fallbacks
-  const adminToken = process.env.ADMIN_SERVICE_TOKEN || 'dev-admin-token';
-  const urlToken = process.env.URL_SERVICE_TOKEN || 'dev-url-token';
-  const redirectToken = process.env.REDIRECT_SERVICE_TOKEN || 'dev-redirect-token';
+  // Tokens come from the root .env (no silent dev fallbacks)
+  const adminToken = requireEnv('ADMIN_SERVICE_TOKEN');
+  const urlToken = requireEnv('URL_SERVICE_TOKEN');
+  const redirectToken = requireEnv('REDIRECT_SERVICE_TOKEN');
 
   describe('auth-service internal stats', () => {
     it('accepts correct ADMIN_SERVICE_TOKEN', async () => {

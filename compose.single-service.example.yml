@@ -1,0 +1,63 @@
+# Example: running ONE service (plus its own datastore) on its own host,
+# as in a one-service-per-VM deployment. Copy this file to the VM that runs
+# url-service, create a .env alongside it, and point the *_SERVICE_URL
+# variables at the PRIVATE IPs (or private DNS names) of the peer VMs —
+# private IPs survive instance stop/start, public IPs do not.
+#
+#   docker compose -f compose.single-service.example.yml up -d --wait
+#
+# The same pattern applies to every service: keep the service and the
+# datastore it owns on the same host, expose only the ports that must be
+# public (see ARCHITECTURE.md — Deployment exposure).
+services:
+  url-service:
+    image: ghcr.io/pxl-digital-application-samples/microshort-url-service:latest
+    restart: unless-stopped
+    ports:
+      - "3002:3002"           # internal API — firewall this to peer VMs only
+    environment:
+      - PORT=3002
+      - DB_HOST=url-db
+      - DB_PORT=3306
+      - DB_NAME=urlshort
+      - DB_USER=urluser
+      - DB_PASSWORD=${URL_DB_PASSWORD:?URL_DB_PASSWORD must be set in .env}
+      # Peer services on other VMs — private IPs / private DNS, never localhost
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:?e.g. http://10.0.1.11:3001}
+      - CONFIG_SERVICE_URL=${CONFIG_SERVICE_URL:?e.g. http://10.0.1.10:3000}
+      - ANALYTICS_SERVICE_URL=${ANALYTICS_SERVICE_URL:?e.g. http://10.0.1.15:3005}
+      - REDIS_URL=${REDIS_URL:?e.g. redis://10.0.1.14:6379}
+      - URL_SERVICE_TOKEN=${URL_SERVICE_TOKEN:?URL_SERVICE_TOKEN must be set in .env}
+      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:?ADMIN_SERVICE_TOKEN must be set in .env}
+      - REDIRECT_SERVICE_TOKEN=${REDIRECT_SERVICE_TOKEN:?REDIRECT_SERVICE_TOKEN must be set in .env}
+    depends_on:
+      url-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  url-db:
+    image: mysql:8-oracle
+    restart: unless-stopped
+    # No ports: only url-service on this host talks to it.
+    environment:
+      - MYSQL_DATABASE=urlshort
+      - MYSQL_USER=urluser
+      - MYSQL_PASSWORD=${URL_DB_PASSWORD:?URL_DB_PASSWORD must be set in .env}
+      - MYSQL_ROOT_PASSWORD=${URL_DB_ROOT_PASSWORD:?URL_DB_ROOT_PASSWORD must be set in .env}
+    volumes:
+      - url-db-data:/var/lib/mysql
+      - ./init:/docker-entrypoint-initdb.d   # copy services/url-service/init/ to the VM
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "urluser", "-p${URL_DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  url-db-data:

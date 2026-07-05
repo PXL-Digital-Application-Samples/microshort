@@ -31,10 +31,10 @@ describe('Config Authentication', () => {
     // We register an admin user (first user).
     const adminEmail = uniqueEmail('configAdmin');
     const adminReg = await register(adminEmail);
-    expect(adminReg.status).toBe(200);
+    expect(adminReg.status).toBe(201);
 
     const adminKey = await createApiKey(adminReg.token, 'admin-config-key');
-    expect(adminKey.status).toBe(200);
+    expect(adminKey.status).toBe(201);
 
     // Get original first to restore
     const getRes = await fetch(`${BASE.config}/config/domain`);

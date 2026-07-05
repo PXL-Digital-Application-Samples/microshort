@@ -6,7 +6,7 @@ import logger from './logger.js';
 
 export const sql = postgres({
   host: env.DB_HOST,
-  port: parseInt(env.DB_PORT),
+  port: env.DB_PORT,
   database: env.DB_NAME,
   username: env.DB_USER,
   password: env.DB_PASSWORD,

@@ -69,6 +69,11 @@ jobs:
         if: matrix.has_tests
         run: npm test
 
+      - name: VanJS source-pattern checks (admin-ui)
+        if: matrix.service == 'admin-ui'
+        working-directory: .
+        run: bash test-ui.sh --source-only
+
       - name: Syntax check
         run: node --check ${{ matrix.entry }}
 
@@ -118,8 +123,12 @@ jobs:
 
       - name: Tag image
         if: github.ref == 'refs/heads/main'
-        run: docker tag microshort-${{ matrix.service }}:ci ghcr.io/pxl-digital-application-samples/microshort-${{ matrix.service }}:latest
+        run: |
+          docker tag microshort-${{ matrix.service }}:ci ghcr.io/pxl-digital-application-samples/microshort-${{ matrix.service }}:latest
+          docker tag microshort-${{ matrix.service }}:ci ghcr.io/pxl-digital-application-samples/microshort-${{ matrix.service }}:${{ github.sha }}
 
       - name: Push image
         if: github.ref == 'refs/heads/main'
-        run: docker push ghcr.io/pxl-digital-application-samples/microshort-${{ matrix.service }}:latest
+        run: |
+          docker push ghcr.io/pxl-digital-application-samples/microshort-${{ matrix.service }}:latest
+          docker push ghcr.io/pxl-digital-application-samples/microshort-${{ matrix.service }}:${{ github.sha }}

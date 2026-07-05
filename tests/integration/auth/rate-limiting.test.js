@@ -10,7 +10,7 @@ describe('Rate Limiting', () => {
 
     // Register the user (consumes 1 request on auth service authLimiter)
     const regRes = await register(email, password);
-    expect(regRes.status).toBe(200);
+    expect(regRes.status).toBe(201);
 
     // Wait 5.5 seconds to let the rate limit window reset completely
     await sleep(5500);
@@ -74,10 +74,10 @@ describe('Rate Limiting', () => {
 
     // Register and get API key (these are on auth-service, so they don't count towards url-service rate limiting)
     const regRes = await register(email, password);
-    expect(regRes.status).toBe(200);
+    expect(regRes.status).toBe(201);
 
     const keyRes = await createApiKey(regRes.token, 'rl-key');
-    expect(keyRes.status).toBe(200);
+    expect(keyRes.status).toBe(201);
     const apiKey = keyRes.apiKey;
 
     // Now make URL creations on url-service. Limit is 5.

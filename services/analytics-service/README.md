@@ -18,7 +18,7 @@ See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the full analytics pipeline des
 
 ## API endpoints
 
-All endpoints require `X-Service-Token: <SERVICE_TOKEN>`.
+All endpoints require an `X-Service-Token` matching one of the configured per-service tokens (`REDIRECT_SERVICE_TOKEN`, `URL_SERVICE_TOKEN`, `ADMIN_SERVICE_TOKEN`; the legacy `SERVICE_TOKEN` is also accepted when set). Health probes, Swagger, and `/actuator/prometheus` are exempt.
 
 ### Ingestion (called by redirect-service)
 
@@ -77,7 +77,10 @@ Bulk slug→click-count lookup. Used by url-service to refresh its denormalized 
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SERVICE_TOKEN` | yes | — | Shared inter-service auth token |
+| `REDIRECT_SERVICE_TOKEN` | yes | — | Accepted token for redirect-service |
+| `URL_SERVICE_TOKEN` | yes | — | Accepted token for url-service |
+| `ADMIN_SERVICE_TOKEN` | yes | — | Accepted token for admin-service |
+| `SERVICE_TOKEN` | no | — | Legacy shared token (deprecated, optional) |
 | `CLICKHOUSE_URL` | no | `jdbc:clickhouse://clickhouse:8123/analytics` | ClickHouse JDBC URL |
 | `CLICKHOUSE_USER` | no | `default` | ClickHouse user |
 | `CLICKHOUSE_PASSWORD` | yes | — | ClickHouse password |

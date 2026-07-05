@@ -2,6 +2,7 @@ services:
   # Config Service
   config-service:
     build: ./services/config-service
+    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
@@ -18,6 +19,7 @@ services:
   # Auth Service
   auth-service:
     build: ./services/auth-service
+    restart: unless-stopped
     ports:
       - "3001:3001"
     environment:
@@ -28,8 +30,8 @@ services:
       - DB_USER=authuser
       - DB_PASSWORD=${AUTH_DB_PASSWORD:?AUTH_DB_PASSWORD must be set in .env}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
-      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
-      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:-dev-admin-token}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:-}
+      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:?ADMIN_SERVICE_TOKEN must be set in .env}
       - REDIS_URL=redis://redis:6379
     depends_on:
       auth-db:
@@ -46,6 +48,7 @@ services:
   # Auth Database
   auth-db:
     image: postgres:17-alpine
+    restart: unless-stopped
     environment:
       - POSTGRES_DB=auth
       - POSTGRES_USER=authuser
@@ -63,6 +66,7 @@ services:
   # URL Service
   url-service:
     build: ./services/url-service
+    restart: unless-stopped
     ports:
       - "3002:3002"
     environment:
@@ -75,9 +79,10 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:3001
       - CONFIG_SERVICE_URL=http://config-service:3000
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
-      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
-      - URL_SERVICE_TOKEN=${URL_SERVICE_TOKEN:-dev-url-token}
-      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:-dev-admin-token}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:-}
+      - URL_SERVICE_TOKEN=${URL_SERVICE_TOKEN:?URL_SERVICE_TOKEN must be set in .env}
+      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:?ADMIN_SERVICE_TOKEN must be set in .env}
+      - REDIRECT_SERVICE_TOKEN=${REDIRECT_SERVICE_TOKEN:?REDIRECT_SERVICE_TOKEN must be set in .env}
       - REDIS_URL=redis://redis:6379
     depends_on:
       url-db:
@@ -98,6 +103,7 @@ services:
   # URL Database
   url-db:
     image: mysql:8-oracle
+    restart: unless-stopped
     environment:
       - MYSQL_DATABASE=urlshort
       - MYSQL_USER=urluser
@@ -116,6 +122,7 @@ services:
   # Redirect Service
   redirect-service:
     build: ./services/redirect-service
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
@@ -123,8 +130,8 @@ services:
       - URL_SERVICE_URL=http://url-service:3002
       - CONFIG_SERVICE_URL=http://config-service:3000
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
-      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
-      - REDIRECT_SERVICE_TOKEN=${REDIRECT_SERVICE_TOKEN:-dev-redirect-token}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:-}
+      - REDIRECT_SERVICE_TOKEN=${REDIRECT_SERVICE_TOKEN:?REDIRECT_SERVICE_TOKEN must be set in .env}
       - IP_HASH_SALT=${IP_HASH_SALT:?IP_HASH_SALT must be set in .env}
       - REDIS_URL=redis://redis:6379
     depends_on:
@@ -146,6 +153,7 @@ services:
   # Admin Service
   admin-service:
     build: ./services/admin-service
+    restart: unless-stopped
     ports:
       - "3003:3003"
     environment:
@@ -155,8 +163,8 @@ services:
       - CONFIG_SERVICE_URL=http://config-service:3000
       - CONFIG_WRITE_TOKEN=${CONFIG_WRITE_TOKEN:?CONFIG_WRITE_TOKEN must be set in .env}
       - ANALYTICS_SERVICE_URL=http://analytics-service:3005
-      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
-      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:-dev-admin-token}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:-}
+      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:?ADMIN_SERVICE_TOKEN must be set in .env}
     depends_on:
       auth-service:
         condition: service_healthy
@@ -176,6 +184,7 @@ services:
   # Admin UI
   admin-ui:
     build: ./services/admin-ui
+    restart: unless-stopped
     ports:
       - "3004:3004"
     environment:
@@ -193,6 +202,7 @@ services:
   # Analytics Service
   analytics-service:
     build: ./services/analytics-service
+    restart: unless-stopped
     ports:
       - "3005:3005"
     environment:
@@ -200,10 +210,10 @@ services:
       - CLICKHOUSE_URL=jdbc:clickhouse://clickhouse:8123/analytics
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD must be set in .env}
-      - SERVICE_TOKEN=${SERVICE_TOKEN:?SERVICE_TOKEN must be set in .env}
-      - REDIRECT_SERVICE_TOKEN=${REDIRECT_SERVICE_TOKEN:-dev-redirect-token}
-      - URL_SERVICE_TOKEN=${URL_SERVICE_TOKEN:-dev-url-token}
-      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:-dev-admin-token}
+      - SERVICE_TOKEN=${SERVICE_TOKEN:-}
+      - REDIRECT_SERVICE_TOKEN=${REDIRECT_SERVICE_TOKEN:?REDIRECT_SERVICE_TOKEN must be set in .env}
+      - URL_SERVICE_TOKEN=${URL_SERVICE_TOKEN:?URL_SERVICE_TOKEN must be set in .env}
+      - ADMIN_SERVICE_TOKEN=${ADMIN_SERVICE_TOKEN:?ADMIN_SERVICE_TOKEN must be set in .env}
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -214,9 +224,12 @@ services:
       retries: 5
       start_period: 40s
 
-  # ClickHouse — columnar store for analytics-service
+  # ClickHouse — columnar store for analytics-service.
+  # Not published to the host: only analytics-service needs it. Add a ports:
+  # mapping locally if you want to inspect it with clickhouse-client.
   clickhouse:
     image: clickhouse/clickhouse-server:26.3
+    restart: unless-stopped
     environment:
       - CLICKHOUSE_DB=analytics
       - CLICKHOUSE_USER=default
@@ -224,8 +237,6 @@ services:
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./services/analytics-service/clickhouse-init:/docker-entrypoint-initdb.d
-    ports:
-      - "8123:8123"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:8123/ping || exit 1"]
       interval: 10s
@@ -237,12 +248,13 @@ services:
         soft: 262144
         hard: 262144
 
-  # Redis — shared cache and rate limiter
+  # Redis — shared cache and rate limiter.
+  # Not published to the host: Redis has no auth, so it must never be reachable
+  # from outside the Docker network. Use `docker compose exec redis redis-cli`
+  # for local inspection.
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:

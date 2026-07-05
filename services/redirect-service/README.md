@@ -54,7 +54,8 @@ Redirect to the long URL associated with the slug.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SERVICE_TOKEN` | yes | — | Inter-service auth token for analytics calls |
+| `REDIRECT_SERVICE_TOKEN` | yes | — | Token presented to analytics-service and url-service |
+| `SERVICE_TOKEN` | no | — | Legacy shared token (deprecated, optional) |
 | `IP_HASH_SALT` | yes | — | Salt for `SHA-256(client_ip + salt)` before storing `ip_hash` |
 | `URL_SERVICE_URL` | no | `http://url-service:3002` | URL service base URL |
 | `CONFIG_SERVICE_URL` | no | `http://config-service:3000` | Config service base URL |
