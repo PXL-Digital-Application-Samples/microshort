@@ -61,6 +61,8 @@ Redirect to the long URL associated with the slug.
 | `CONFIG_SERVICE_URL` | no | `http://config-service:3000` | Config service base URL |
 | `ANALYTICS_SERVICE_URL` | no | `http://analytics-service:3005` | Analytics service base URL |
 | `REDIS_URL` | no | `redis://redis:6379` | Redis URL (for URL cache) |
+| `REDIRECT_RATE_LIMIT_WINDOW_MS` | no | `60000` | Rate-limit window for `GET /:slug` in milliseconds |
+| `REDIRECT_RATE_LIMIT_MAX` | no | `300` | Max redirects per client IP per window (raise for load testing) |
 | `ANALYTICS_BATCH_SIZE` | no | `50` | Max events per flush to analytics |
 | `ANALYTICS_FLUSH_MS` | no | `5000` | Flush interval in milliseconds |
 | `PORT` | no | `8080` | HTTP port |

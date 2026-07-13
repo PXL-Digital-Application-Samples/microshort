@@ -10,6 +10,8 @@ export const env = cleanEnv(process.env, {
   CONFIG_SERVICE_URL:     str({ default: 'http://config-service:3000' }),
   PORT:                   port({ default: 8080 }),
   CACHE_TTL_SECONDS:      num({ default: 300 }),
+  REDIRECT_RATE_LIMIT_WINDOW_MS: num({ default: 60 * 1000 }),
+  REDIRECT_RATE_LIMIT_MAX:       num({ default: 300 }),
   ANALYTICS_BATCH_SIZE:   num({ default: 50 }),
   ANALYTICS_FLUSH_MS:     num({ default: 5000 }),
   ANALYTICS_MAX_BUFFER:   num({ default: 10_000, desc: 'Max buffered click events while analytics-service is unreachable; oldest are dropped beyond this' }),

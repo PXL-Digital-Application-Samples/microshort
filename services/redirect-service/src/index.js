@@ -85,8 +85,8 @@ app.use((req, res, next) => {
 });
 
 const redirectLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: 300,
+  windowMs: env.REDIRECT_RATE_LIMIT_WINDOW_MS,
+  limit: env.REDIRECT_RATE_LIMIT_MAX,
   standardHeaders: 'draft-6',
   legacyHeaders: false,
   passOnStoreError: true,

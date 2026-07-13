@@ -134,6 +134,8 @@ services:
       - REDIRECT_SERVICE_TOKEN=${REDIRECT_SERVICE_TOKEN:?REDIRECT_SERVICE_TOKEN must be set in .env}
       - IP_HASH_SALT=${IP_HASH_SALT:?IP_HASH_SALT must be set in .env}
       - REDIS_URL=redis://redis:6379
+      - REDIRECT_RATE_LIMIT_WINDOW_MS=${REDIRECT_RATE_LIMIT_WINDOW_MS:-60000}
+      - REDIRECT_RATE_LIMIT_MAX=${REDIRECT_RATE_LIMIT_MAX:-300}
     depends_on:
       redis:
         condition: service_healthy
